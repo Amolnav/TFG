@@ -1,0 +1,185 @@
+{
+    "status": "success",
+    "data": {
+        "restaurant_name": "Bar Ejemplo",
+        "restaurant_tagline": "Tapas y vermut de barrio",
+        "restaurant_address": "Plaza Mayor, 1 \u2014 Ciudad Ejemplo",
+        "restaurant_phone": "900 000 000",
+        "restaurant_email": "hola@bar-ejemplo.example",
+        "social_instagram": "https://instagram.com/bar.ejemplo",
+        "social_facebook": "",
+        "maps_url": "https://maps.google.com/?q=Plaza+Mayor+1",
+        "map_image": "",
+        "timezone": "Europe/Madrid",
+        "currency": "EUR",
+        "languages_supported": "es,en",
+        "language_default": "en",
+        "brand_logo": "\ud83e\uded2",
+        "theme_primary": "#14532D",
+        "theme_primary_light": "#166534",
+        "theme_accent": "#EA580C",
+        "theme_accent_hover": "#C2410C",
+        "theme_decor": "#65A30D",
+        "font_heading": "Georgia, \"Times New Roman\", serif",
+        "font_body": "system-ui, \"Segoe UI\", Roboto, sans-serif",
+        "fonts_url": "",
+        "specialties": {
+            "title": {
+                "es": "Los imprescindibles",
+                "en": "The essentials"
+            },
+            "items": [
+                {
+                    "id": 1,
+                    "name": {
+                        "es": "Bravas Ejemplo",
+                        "en": "Bravas Ejemplo"
+                    },
+                    "description": {
+                        "es": "Patatas bravas con nuestra salsa de la casa.",
+                        "en": "Crispy potatoes with our house brava sauce."
+                    },
+                    "image": "/branding/dish1.svg"
+                },
+                {
+                    "id": 2,
+                    "name": {
+                        "es": "Vermut de grifo",
+                        "en": "Vermouth on tap"
+                    },
+                    "description": {
+                        "es": "Vermut rojo de elaboraci\u00f3n local, con su naranja y su aceituna.",
+                        "en": "Locally made red vermouth, with orange and an olive."
+                    },
+                    "image": "/branding/dish2.svg"
+                }
+            ]
+        },
+        "hero": {
+            "title": {
+                "es": "Tapas con alma de barrio",
+                "en": "Neighbourhood tapas with soul"
+            },
+            "subtitle": {
+                "es": "Vermut de grifo, conservas escogidas y tapas de mercado en la plaza de siempre.",
+                "en": "Vermouth on tap, hand-picked tinned delicacies and market tapas on the old town square."
+            },
+            "image": "/branding/hero.svg"
+        },
+        "about": {
+            "title": {
+                "es": "La casa",
+                "en": "The house"
+            },
+            "text": {
+                "es": "Bar Ejemplo es un bar de barrio de toda la vida: barra de m\u00e1rmol, ca\u00f1a bien tirada y tapas que cambian con el mercado.",
+                "en": "Bar Ejemplo is a lifelong neighbourhood bar: marble counter, well-poured beer and tapas that change with the market."
+            },
+            "image": "/branding/about.svg"
+        },
+        "history": {
+            "title": {
+                "es": "Nuestra Historia",
+                "en": "Our Story"
+            },
+            "subtitle": {
+                "es": "Una barra abierta desde 2020.",
+                "en": "A bar counter open since 2020."
+            },
+            "valuesTitle": {
+                "es": "La casa por dentro",
+                "en": "What we stand for"
+            },
+            "sections": [
+                {
+                    "title": {
+                        "es": "La barra de la plaza",
+                        "en": "The counter on the square"
+                    },
+                    "paragraphs": [
+                        {
+                            "es": "Bar Ejemplo abri\u00f3 en 2020 con una idea sencilla: producto honesto, precios claros y una barra donde todo el mundo cabe.",
+                            "en": "Bar Ejemplo opened in 2020 with a simple idea: honest produce, clear prices and a counter with room for everyone."
+                        }
+                    ]
+                }
+            ],
+            "values": [
+                {
+                    "title": {
+                        "es": "Mercado diario:",
+                        "en": "Daily market:"
+                    },
+                    "text": {
+                        "es": "La pizarra cambia seg\u00fan lo que entra cada ma\u00f1ana.",
+                        "en": "The chalkboard changes with what arrives each morning."
+                    }
+                },
+                {
+                    "title": {
+                        "es": "Sin prisas:",
+                        "en": "No rush:"
+                    },
+                    "text": {
+                        "es": "Aqu\u00ed se viene a estar; la mesa es tuya mientras la disfrutes.",
+                        "en": "You come here to stay; the table is yours while you enjoy it."
+                    }
+                }
+            ],
+            "visit": {
+                "title": {
+                    "es": "P\u00e1sate a vernos",
+                    "en": "Come around"
+                },
+                "text": {
+                    "es": "Estamos en la Plaza Mayor, 1. La barra abre todos los d\u00edas.",
+                    "en": "We are at Plaza Mayor, 1. The counter opens every day."
+                }
+            }
+        },
+        "reservation": {
+            "quote": {
+                "es": "\"Una tapa, un vermut y la plaza de fondo.\"",
+                "en": "\"A tapa, a vermouth and the square in the background.\""
+            },
+            "image": "/branding/reservation.svg"
+        },
+        "menuNotes": {
+            "title": {
+                "es": "De la casa",
+                "en": "From the house"
+            },
+            "text": {
+                "es": "Todos nuestros precios incluyen pan y aceitunas de bienvenida.",
+                "en": "All our prices include bread and welcome olives."
+            }
+        },
+        "schedule": {
+            "openingDays": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6
+            ],
+            "shifts": [
+                {
+                    "name": "Servicio continuo",
+                    "startTime": "12:00",
+                    "endTime": "23:30",
+                    "daysOfWeek": [
+                        0,
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6
+                    ]
+                }
+            ]
+        }
+    }
+}

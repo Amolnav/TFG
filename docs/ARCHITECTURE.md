@@ -16,7 +16,7 @@ El backend sigue una arquitectura en capas para separar responsabilidades:
 
 **Patrones Utilizados:**
 - **Layered Architecture:** Separación clara entre HTTP y lógica de negocio.
-- **Middleware Pattern:** Para validaciones (Joi), autenticación (JWT) y manejo de errores.
+- **Middleware Pattern:** Para autenticación (JWT con re-verificación en BD), autorización por roles (ADMIN/STAFF) y manejo de errores. Las validaciones de entrada son propias (validationService y validadores por controlador).
 - **Service Pattern:** Para facilitar el testing y la reutilización de código.
 
 ### 🎨 Frontend (React & TypeScript)
@@ -41,12 +41,12 @@ sequenceDiagram
     participant IO as Socket.io
 
     User->>FE: Introduce datos reserva
-    FE->>BE: POST /api/bookings
-    BE->>DB: Verifica disponibilidad
+    FE->>BE: POST /api/public/reservations
+    BE->>DB: Verifica disponibilidad (lock transaccional)
     DB-->>BE: Disponibilidad confirmada
-    BE->>DB: Crea registro PENDING
-    BE->>IO: Notifica al Panel Admin
-    BE-->>FE: 201 Created (Token confirmación)
+    BE->>DB: Crea registro CONFIRMED
+    BE->>IO: Notifica al Panel Admin (new_reservation)
+    BE-->>FE: 201 Created
     IO-->>FE: Actualiza UI Admin en tiempo real
 ```
 
@@ -54,8 +54,8 @@ sequenceDiagram
 
 ## 🔌 Integraciones y Servicios Externos
 
-- **Email Service:** El backend utiliza `nodemailer` para el envío de correos electrónicos de confirmación, reconfirmación y recordatorio.
-- **WebSockets:** Se utiliza `Socket.io` para que el panel de administración reciba cambios de estado y nuevas reservas sin necesidad de refrescar la página.
+- **Email Service:** El backend utiliza `nodemailer` para el envío del correo de confirmación de reserva (los recordatorios y la reconfirmación están previstos pero no implementados).
+- **WebSockets:** Se utiliza `Socket.io` para que el panel de administración reciba en tiempo real altas (`new_reservation`), ediciones (`reservation_updated`), cambios de estado (`reservation_status_changed`) y cancelaciones (`reservation_cancelled`).
 
 ---
 

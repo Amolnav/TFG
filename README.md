@@ -49,9 +49,14 @@ El sistema está diseñado para tres tipos de usuarios:
    - Gestionar el menú y los usuarios del sistema.
 
 ### 🔑 Credenciales de Prueba (Demo)
-Para evaluar el sistema y acceder al panel de administración (`/admin`), puedes utilizar las siguientes credenciales generadas por defecto:
-- **Usuario:** `admin@mesonmarinero.com`
-- **Contraseña:** `admin1234`
+El seed DEMO crea un administrador para el panel (`/admin`) según el dataset
+activo (`RESTAURANT`, ver [docs/NUEVO_RESTAURANTE.md](docs/NUEVO_RESTAURANTE.md)):
+- `meson-marinero` → `admin@mesonmarinero.com` / `admin1234`
+- `bar-ejemplo` → `admin@bar-ejemplo.example` / `admin1234`
+
+La contraseña se puede cambiar con `SEED_ADMIN_PASSWORD`. En producción
+(`SEED_MODE=prod`) no hay credenciales por defecto: `SEED_ADMIN_EMAIL` y
+`SEED_ADMIN_PASSWORD` son obligatorias.
 
 ---
 
@@ -177,18 +182,17 @@ erDiagram
      - Crear una regla: `Source: /*` -> `Destination: /index.html` -> `Action: Rewrite`.
 
 4. **Semilla de Datos (Seed):**
-   - Para poblar la base de datos inicial, ejecuta `bash seed-prod.sh` dentro de la carpeta `backend` localmente, o configúralo temporalmente en el Build Command de Render.
+   - Ejecuta el seed parametrizado desde `backend/` apuntando `DATABASE_URL` a la BD de producción:
+     `RESTAURANT=<dataset> SEED_MODE=prod SEED_ADMIN_EMAIL=... SEED_ADMIN_PASSWORD=... npm run db:seed`
+   - Ver el checklist completo en [docs/NUEVO_RESTAURANTE.md](docs/NUEVO_RESTAURANTE.md).
 
 ---
 
 ## 📸 Capturas de Pantalla
 
-<table>
-  <tr>
-    <td><img src="frontend/public/img/HomeExample.png" width="400"/><br/><sub>Portal Público - Home</sub></td>
-    <td><img src="frontend/public/img/AdminExample.png" width="400"/><br/><sub>Panel de Administración</sub></td>
-  </tr>
-</table>
+La identidad visible (marca, colores, contenidos) depende del dataset y de la
+configuración del despliegue; ver `docs/evidencias/` para capturas del dataset
+de ejemplo "Bar Ejemplo".
 
 ---
 
