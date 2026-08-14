@@ -4,11 +4,14 @@
 .env.*.local
 .env.production.local
 
+# Secretos (BUG-01: nunca versionar scripts con credenciales)
+backend/seed-prod.sh
+
 # Dependencies
 node_modules/
 pnpm-lock.yaml
-package-lock.json
 yarn.lock
+# BUG-29: los package-lock.json deben versionarse (builds reproducibles)
 
 # Build outputs
 dist/
@@ -48,6 +51,8 @@ Thumbs.db
 *.lcov
 .jest_cache/
 coverage/
+frontend/test-results/
+frontend/playwright-report/
 
 # Temporary files
 *.tmp
@@ -67,7 +72,7 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
-migrations/
+# BUG-29: no ignorar migrations/ — las migraciones de Prisma deben versionarse
 
 # Cache
 .cache/
@@ -110,3 +115,4 @@ migrations/
 # System files
 Thumbs.db
 desktop.ini
+backups/
