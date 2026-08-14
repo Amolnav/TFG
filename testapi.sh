@@ -170,7 +170,7 @@ req POST "$BASE/api/public/reservations/availability/check" \
   "{\"date\": \"$NEXT_WEEK\", \"time\": \"13:00\", \"pax\": 2}"
 
 echo ""
-echo "▶ Check dinner slot (21:00) - should show Mesa S-1 as occupied (from seed)"
+echo "▶ Check dinner slot (21:00)"
 req POST "$BASE/api/public/reservations/availability/check" \
   "{\"date\": \"$TOMORROW\", \"time\": \"21:00\", \"pax\": 2}"
 
@@ -207,9 +207,9 @@ echo ""
 echo "📌 Confirmation Code 2: $CONFIRMATION_CODE_2"
 
 echo ""
-echo "▶ Returning customer (same email as seed: cliente@normal.com)"
+echo "▶ Returning customer (same email as seed: juan@example.com)"
 req POST "$BASE/api/public/reservations" \
-  "{\"date\": \"$NEXT_WEEK\", \"time\": \"13:30\", \"pax\": 2, \"customer\": {\"email\": \"cliente@normal.com\", \"firstName\": \"Juan\", \"lastName\": \"Pérez\", \"phone\": \"+34600111222\"}}"
+  "{\"date\": \"$NEXT_WEEK\", \"time\": \"13:30\", \"pax\": 2, \"customer\": {\"email\": \"juan@example.com\", \"firstName\": \"Juan\", \"lastName\": \"Pérez\", \"phone\": \"+34600111222\"}}"
 
 # ============================================================
 # 7. CREATE RESERVATION (ERROR CASES)
@@ -220,9 +220,9 @@ echo "7️⃣  CREATE RESERVATION - ERROR CASES"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 echo ""
-echo "▶ ❌ Blacklisted customer (from seed: blacklisted@bad.com)"
+echo "▶ ❌ Blacklisted customer (from seed: bloqueado@example.com)"
 req POST "$BASE/api/public/reservations" \
-  "{\"date\": \"$NEXT_WEEK\", \"time\": \"14:00\", \"pax\": 2, \"customer\": {\"email\": \"blacklisted@bad.com\", \"firstName\": \"Denis\", \"lastName\": \"El Travieso\", \"phone\": \"+34000000000\"}}"
+  "{\"date\": \"$NEXT_WEEK\", \"time\": \"14:00\", \"pax\": 2, \"customer\": {\"email\": \"bloqueado@example.com\", \"firstName\": \"Denis\", \"lastName\": \"El Travieso\", \"phone\": \"+34000000000\"}}"
 
 echo ""
 echo "▶ ❌ Missing required fields"

@@ -2,6 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../index';
 const prisma = require('../config/database');
+// Espía sobre el módulo compartido: evita el intento de conexión SMTP real
+// del email fire-and-forget al crear la reserva.
+const emailService = require('../services/emailService');
+vi.spyOn(emailService, 'sendBookingConfirmation').mockResolvedValue(undefined);
+const { daysFromFrozenNow } = require('./helpers/testDates');
+
+// Fecha reservable de referencia: a 16 días del reloj congelado
+const BOOKABLE_DATE = daysFromFrozenNow(16);
 
 describe('Reservation Integration Tests', () => {
 
@@ -20,7 +28,7 @@ describe('Reservation Integration Tests', () => {
   describe('POST /api/public/reservations', () => {
     it('debería crear una reserva con éxito', async () => {
       const bookingData = {
-        date: '2026-05-01',
+        date: BOOKABLE_DATE,
         time: '14:00',
         pax: 2,
         customer: {
@@ -60,7 +68,7 @@ describe('Reservation Integration Tests', () => {
 
     it('debería rechazar reservas fuera del turno configurado', async () => {
       const bookingData = {
-        date: '2026-05-01',
+        date: BOOKABLE_DATE,
         time: '16:00',
         pax: 2,
         customer: {
