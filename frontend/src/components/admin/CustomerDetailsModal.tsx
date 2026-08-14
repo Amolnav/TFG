@@ -1,12 +1,16 @@
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   getCustomerById,
   updateCustomer,
   addCustomerNote,
   toggleCustomerVip,
   toggleCustomerBlacklist,
+  exportCustomerData,
+  anonymizeCustomer,
 } from '../../services/api';
+import { getSessionRole } from '../../utils/session';
 import type { Customer } from '../../types';
 
 interface CustomerDetailsModalProps {
@@ -20,28 +24,41 @@ export default function CustomerDetailsModal({
   onClose,
   onUpdate,
 }: CustomerDetailsModalProps) {
+  const { t, i18n } = useTranslation();
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [isAddingNote, setIsAddingNote] = useState(false);
+  // BUG-52: formulario inline para el motivo de blacklist (sustituye a prompt())
+  const [showBlacklistForm, setShowBlacklistForm] = useState(false);
+  const [blacklistReason, setBlacklistReason] = useState('');
 
   useEffect(() => {
+    // BUG-52: guarda contra respuestas obsoletas si cambia el cliente
+    // mientras la petición anterior sigue en vuelo
+    let cancelled = false;
     const fetchDetails = async () => {
       setIsLoading(true);
+      setError(null);
       try {
         const details = await getCustomerById(customerId);
+        if (cancelled) return;
         setEditingCustomer(details);
       } catch (err) {
+        if (cancelled) return;
         console.error('Error fetching customer details:', err);
-        setError('Error al cargar los detalles del cliente');
+        setError(t('admin.customerModal.loadError'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
     fetchDetails();
-  }, [customerId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, t]);
 
   const handleSaveCustomer = async () => {
     if (!editingCustomer) return;
@@ -57,13 +74,13 @@ export default function CustomerDetailsModal({
 
       await updateCustomer(editingCustomer.id, updateData);
       if (onUpdate) onUpdate();
-      
+
       // Close modal after success
       onClose();
     } catch (err) {
       const errorMessage =
         (err as { response?: { data?: { message: string } } })?.response?.data
-          ?.message || 'Error saving customer';
+          ?.message || t('admin.customerModal.saveError');
       setError(errorMessage);
     } finally {
       setIsSaving(false);
@@ -84,7 +101,7 @@ export default function CustomerDetailsModal({
     } catch (err) {
       const errorMessage =
         (err as { response?: { data?: { message: string } } })?.response?.data
-          ?.message || 'Error adding note';
+          ?.message || t('admin.customerModal.noteError');
       setError(errorMessage);
     } finally {
       setIsAddingNote(false);
@@ -104,31 +121,37 @@ export default function CustomerDetailsModal({
         isVip: newVipStatus,
         tags: newVipStatus
           ? [...(editingCustomer.tags || []), 'VIP'].filter(
-              (t, i, a) => a.indexOf(t) === i
+              (tag, i, a) => a.indexOf(tag) === i
             )
-          : (editingCustomer.tags || []).filter((t) => t !== 'VIP'),
+          : (editingCustomer.tags || []).filter((tag) => tag !== 'VIP'),
       });
       if (onUpdate) onUpdate();
     } catch (err) {
       const errorMessage =
         (err as { response?: { data?: { message: string } } })?.response?.data
-          ?.message || 'Error toggling VIP status';
+          ?.message || t('admin.customerModal.vipError');
       setError(errorMessage);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleToggleBlacklist = async () => {
+  const handleToggleBlacklist = () => {
     if (!editingCustomer) return;
 
-    const newBlacklistStatus = !editingCustomer.isBlacklisted;
-    let reason = '';
-
-    if (newBlacklistStatus) {
-      reason = prompt('Ingresa la razón para añadir a la lista negra:') || '';
-      if (!reason.trim()) return;
+    if (!editingCustomer.isBlacklisted) {
+      // BUG-52: pedir el motivo con un formulario inline en el modal
+      setBlacklistReason('');
+      setShowBlacklistForm(true);
+      return;
     }
+
+    // Quitar de la blacklist no necesita motivo
+    applyBlacklistChange(false, undefined);
+  };
+
+  const applyBlacklistChange = async (newBlacklistStatus: boolean, reason?: string) => {
+    if (!editingCustomer) return;
 
     setIsSaving(true);
     try {
@@ -144,15 +167,17 @@ export default function CustomerDetailsModal({
         blacklistReason: newBlacklistStatus ? reason : undefined,
         tags: newBlacklistStatus
           ? [...(editingCustomer.tags || []), 'BLACKLIST'].filter(
-              (t, i, a) => a.indexOf(t) === i
+              (tag, i, a) => a.indexOf(tag) === i
             )
-          : (editingCustomer.tags || []).filter((t) => t !== 'BLACKLIST'),
+          : (editingCustomer.tags || []).filter((tag) => tag !== 'BLACKLIST'),
       });
+      setShowBlacklistForm(false);
+      setBlacklistReason('');
       if (onUpdate) onUpdate();
     } catch (err) {
       const errorMessage =
         (err as { response?: { data?: { message: string } } })?.response?.data
-          ?.message || 'Error toggling blacklist status';
+          ?.message || t('admin.customerModal.blacklistError');
       setError(errorMessage);
     } finally {
       setIsSaving(false);
@@ -175,17 +200,54 @@ export default function CustomerDetailsModal({
     if (!editingCustomer) return;
 
     const newTags = editingCustomer.tags?.includes(tag)
-      ? editingCustomer.tags.filter((t) => t !== tag)
+      ? editingCustomer.tags.filter((existing) => existing !== tag)
       : [...(editingCustomer.tags || []), tag];
 
     updateEditingField('tags', newTags);
   };
 
+  // ── N4.4: RGPD — exportación y anonimización ─────────────────────────
+
+  const handleGdprExport = async () => {
+    if (!editingCustomer) return;
+    try {
+      const data = await exportCustomerData(editingCustomer.id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `cliente-${editingCustomer.id.slice(0, 8)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setError(t('admin.customerModal.gdprExportError'));
+    }
+  };
+
+  const handleGdprAnonymize = async () => {
+    if (!editingCustomer) return;
+    if (!window.confirm(t('admin.customerModal.gdprAnonymizeConfirm'))) return;
+    setIsSaving(true);
+    try {
+      await anonymizeCustomer(editingCustomer.id);
+      if (onUpdate) onUpdate();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError(t('admin.customerModal.gdprAnonymizeError'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // BUG-52: el clic en el overlay ya NO cierra el modal (solo la X o los
+  // botones), para no descartar cambios sin querer.
   if (isLoading) {
     return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-body">Cargando detalles del cliente...</div>
+      <div className="modal-overlay">
+        <div className="modal">
+          <div className="modal-body">{t('admin.customerModal.loading')}</div>
         </div>
       </div>
     );
@@ -193,10 +255,10 @@ export default function CustomerDetailsModal({
 
   if (error && !editingCustomer) {
     return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-overlay">
+        <div className="modal">
           <div className="modal-header">
-            <h2>Error</h2>
+            <h2>{t('admin.customerModal.errorTitle')}</h2>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
           <div className="modal-body">{error}</div>
@@ -208,8 +270,8 @@ export default function CustomerDetailsModal({
   if (!editingCustomer) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal--large" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal modal--large">
         <div className="modal-header">
           <h2>
             {editingCustomer.firstName} {editingCustomer.lastName}
@@ -224,10 +286,10 @@ export default function CustomerDetailsModal({
 
           {/* Datos de Contacto */}
           <div className="modal-section">
-            <h3>📋 Datos de Contacto</h3>
+            <h3>📋 {t('admin.customerModal.contactData')}</h3>
             <div className="modal-grid">
               <div>
-                <label>Email:</label>
+                <label>{t('admin.customerModal.emailLabel')}</label>
                 <input
                   type="email"
                   value={editingCustomer.email}
@@ -236,7 +298,7 @@ export default function CustomerDetailsModal({
                 />
               </div>
               <div>
-                <label>Teléfono:</label>
+                <label>{t('admin.customerModal.phoneLabel')}</label>
                 <input
                   type="tel"
                   value={editingCustomer.phone || ''}
@@ -245,31 +307,31 @@ export default function CustomerDetailsModal({
                 />
               </div>
             </div>
-            
-            {((editingCustomer.previousEmails?.length || 0) > 1 || 
-               (editingCustomer.previousPhones?.length || 0) > 1 || 
+
+            {((editingCustomer.previousEmails?.length || 0) > 1 ||
+               (editingCustomer.previousPhones?.length || 0) > 1 ||
                (editingCustomer.previousNames?.length || 0) > 1) && (
-              <div className="modal-section-accent" style={{ 
-                marginTop: '1.5rem', 
-                padding: '1rem', 
-                borderRadius: '12px', 
+              <div className="modal-section-accent" style={{
+                marginTop: '1.5rem',
+                padding: '1rem',
+                borderRadius: '12px',
                 background: 'var(--accent-soft)',
                 border: '1px solid var(--border)'
               }}>
                 <h4 style={{ margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--primary)' }}>
-                  🕒 Historial de Identidad
+                  🕒 {t('admin.customerModal.identityHistory')}
                 </h4>
-                
+
                 <div style={{ display: 'grid', gap: '1rem' }}>
                   {(editingCustomer.previousEmails?.length || 0) > 1 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Otros emails
+                        {t('admin.customerModal.otherEmails')}
                       </span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                         {editingCustomer.previousEmails?.filter(e => e !== editingCustomer.email).map(e => (
-                          <span key={e} className="customer-badge" style={{ 
-                            background: 'var(--card-bg)', 
+                          <span key={e} className="customer-badge" style={{
+                            background: 'var(--card-bg)',
                             color: 'var(--text-dark)',
                             border: '1px solid var(--border)',
                             fontSize: '0.75rem',
@@ -285,12 +347,12 @@ export default function CustomerDetailsModal({
                   {(editingCustomer.previousPhones?.length || 0) > 1 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Otros teléfonos
+                        {t('admin.customerModal.otherPhones')}
                       </span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                         {editingCustomer.previousPhones?.filter(p => p !== editingCustomer.phone).map(p => (
-                          <span key={p} className="customer-badge" style={{ 
-                            background: 'var(--card-bg)', 
+                          <span key={p} className="customer-badge" style={{
+                            background: 'var(--card-bg)',
                             color: 'var(--text-dark)',
                             border: '1px solid var(--border)',
                             fontSize: '0.75rem',
@@ -306,12 +368,12 @@ export default function CustomerDetailsModal({
                   {(editingCustomer.previousNames?.length || 0) > 1 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Otros nombres
+                        {t('admin.customerModal.otherNames')}
                       </span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                         {editingCustomer.previousNames?.filter(n => n !== `${editingCustomer.firstName} ${editingCustomer.lastName}`.trim()).map(n => (
-                          <span key={n} className="customer-badge" style={{ 
-                            background: 'var(--card-bg)', 
+                          <span key={n} className="customer-badge" style={{
+                            background: 'var(--card-bg)',
                             color: 'var(--text-dark)',
                             border: '1px solid var(--border)',
                             fontSize: '0.75rem',
@@ -330,10 +392,10 @@ export default function CustomerDetailsModal({
 
           {/* Estadísticas */}
           <div className="modal-section">
-            <h3>📊 Estadísticas</h3>
+            <h3>📊 {t('admin.customerModal.stats')}</h3>
             <div className="modal-grid">
               <div>
-                <label>Visitas Totales:</label>
+                <label>{t('admin.customerModal.totalVisits')}</label>
                 <input
                   type="number"
                   value={editingCustomer.totalVisits}
@@ -342,7 +404,7 @@ export default function CustomerDetailsModal({
                 />
               </div>
               <div>
-                <label>No-shows:</label>
+                <label>{t('admin.customerModal.noShows')}</label>
                 <input
                   type="number"
                   value={editingCustomer.totalNoShows}
@@ -355,7 +417,7 @@ export default function CustomerDetailsModal({
 
           {/* Alergias */}
           <div className="modal-section">
-            <h3>🚨 Alergias</h3>
+            <h3>🚨 {t('admin.customerModal.allergies')}</h3>
             <textarea
               value={editingCustomer.allergens?.join(', ') || ''}
               onChange={(e) => {
@@ -363,24 +425,24 @@ export default function CustomerDetailsModal({
                 const allergensArr = val.split(',').map(a => a.trim()).filter(a => a !== '');
                 updateEditingField('allergens', allergensArr);
               }}
-              placeholder="Ej: Gluten, Lactosa, Marisco..."
+              placeholder={t('admin.customerModal.allergiesPlaceholder')}
               className="form-textarea"
               rows={2}
             />
             <p className="form-help-text" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-               Separa las alergias con comas si hay varias.
+               {t('admin.customerModal.allergiesHelp')}
             </p>
           </div>
 
           {/* Preferencias */}
           <div className="modal-section">
-            <h3>📝 Preferencias y Notas</h3>
+            <h3>📝 {t('admin.customerModal.preferences')}</h3>
             <textarea
               value={editingCustomer.preferences || ''}
               onChange={(e) =>
                 updateEditingField('preferences', e.target.value)
               }
-              placeholder="Ingresa las preferencias o notas sobre el cliente..."
+              placeholder={t('admin.customerModal.preferencesPlaceholder')}
               className="form-textarea"
               rows={4}
             />
@@ -388,7 +450,7 @@ export default function CustomerDetailsModal({
 
           {/* Cumpleaños */}
           <div className="modal-section">
-            <h3>🎂 Cumpleaños</h3>
+            <h3>🎂 {t('admin.customerModal.birthday')}</h3>
             <input
               type="date"
               value={editingCustomer.birthday?.split('T')[0] || ''}
@@ -401,7 +463,7 @@ export default function CustomerDetailsModal({
 
           {/* VIP & Blacklist Toggle */}
           <div className="modal-section">
-            <h3>⚡ Estado del Cliente</h3>
+            <h3>⚡ {t('admin.customerModal.customerStatus')}</h3>
             <div className="status-toggles">
               <button
                 className={`status-toggle ${
@@ -412,7 +474,7 @@ export default function CustomerDetailsModal({
               >
                 <span className="status-toggle__icon">⭐</span>
                 <span className="status-toggle__label">
-                  {editingCustomer.isVip ? 'Es VIP' : 'Marcar como VIP'}
+                  {editingCustomer.isVip ? t('admin.customerModal.isVip') : t('admin.customerModal.markVip')}
                 </span>
               </button>
 
@@ -428,22 +490,68 @@ export default function CustomerDetailsModal({
                 <span className="status-toggle__icon">🚫</span>
                 <span className="status-toggle__label">
                   {editingCustomer.isBlacklisted
-                    ? 'En Blacklist'
-                    : 'Añadir a Blacklist'}
+                    ? t('admin.customerModal.inBlacklist')
+                    : t('admin.customerModal.addBlacklist')}
                 </span>
               </button>
             </div>
 
+            {/* BUG-52: formulario inline de motivo de blacklist */}
+            {showBlacklistForm && !editingCustomer.isBlacklisted && (
+              <div
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.75rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                }}
+              >
+                <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                  {t('admin.customerModal.blacklistFormTitle')}
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={blacklistReason}
+                  onChange={(e) => setBlacklistReason(e.target.value)}
+                  placeholder={t('admin.customerModal.blacklistReasonPlaceholder')}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <button
+                    className="btn btn--secondary btn--small"
+                    onClick={() => {
+                      setShowBlacklistForm(false);
+                      setBlacklistReason('');
+                    }}
+                    disabled={isSaving}
+                  >
+                    {t('admin.common.cancel')}
+                  </button>
+                  <button
+                    className="btn btn--primary btn--small"
+                    onClick={() => applyBlacklistChange(true, blacklistReason.trim())}
+                    disabled={isSaving || !blacklistReason.trim()}
+                  >
+                    {t('admin.customerModal.confirmBlacklist')}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {editingCustomer.isBlacklisted && editingCustomer.blacklistReason && (
               <div className="blacklist-reason">
-                <strong>Razón:</strong> {editingCustomer.blacklistReason}
+                <strong>{t('admin.customerModal.reasonLabel')}</strong> {editingCustomer.blacklistReason}
               </div>
             )}
           </div>
 
           {/* Etiquetas */}
           <div className="modal-section">
-            <h3>🏷️ Etiquetas Personalizadas</h3>
+            <h3>🏷️ {t('admin.customerModal.tags')}</h3>
             <div className="tags-list">
               {['Cumpleaños', 'Evento Especial', 'Referencia'].map(
                 (tag) => (
@@ -469,12 +577,12 @@ export default function CustomerDetailsModal({
 
           {/* Notas del Staff */}
           <div className="modal-section">
-            <h3>💬 Notas del Staff</h3>
+            <h3>💬 {t('admin.customerModal.staffNotes')}</h3>
             <div className="notes-form">
               <textarea
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Añade una nueva nota sobre el cliente..."
+                placeholder={t('admin.customerModal.notePlaceholder')}
                 className="form-textarea"
                 rows={2}
               />
@@ -483,7 +591,7 @@ export default function CustomerDetailsModal({
                 onClick={handleAddNote}
                 disabled={isAddingNote || !newNote.trim()}
               >
-                {isAddingNote ? 'Añadiendo...' : 'Añadir Nota'}
+                {isAddingNote ? t('admin.customerModal.addingNote') : t('admin.customerModal.addNote')}
               </button>
             </div>
 
@@ -497,7 +605,7 @@ export default function CustomerDetailsModal({
                         <strong>{note.createdBy}</strong>
                         <span className="note-date">
                           {new Date(note.createdAt).toLocaleDateString(
-                            'es-ES'
+                            i18n.language
                           )}
                         </span>
                       </div>
@@ -510,18 +618,40 @@ export default function CustomerDetailsModal({
         </div>
 
         <div className="modal-footer">
+          {/* N4.4: RGPD — exportar (todos) y anonimizar (solo ADMIN) */}
+          <div style={{ display: 'flex', gap: '0.75rem', marginRight: 'auto' }}>
+            <button
+              className="btn btn--secondary"
+              onClick={handleGdprExport}
+              disabled={isSaving}
+              title={t('admin.customerModal.gdprExportTitle')}
+            >
+              📦 {t('admin.customerModal.gdprExport')}
+            </button>
+            {getSessionRole() === 'ADMIN' && (
+              <button
+                className="btn btn--secondary"
+                onClick={handleGdprAnonymize}
+                disabled={isSaving}
+                style={{ color: 'var(--accent-danger)' }}
+                title={t('admin.customerModal.gdprAnonymizeTitle')}
+              >
+                🕵️ {t('admin.customerModal.gdprAnonymize')}
+              </button>
+            )}
+          </div>
           <button
             className="btn btn--secondary"
             onClick={onClose}
           >
-            Cancelar
+            {t('admin.common.cancel')}
           </button>
           <button
             className="btn btn--primary"
             onClick={handleSaveCustomer}
             disabled={isSaving}
           >
-            {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+            {isSaving ? t('admin.common.saving') : t('admin.common.saveChanges')}
           </button>
         </div>
       </div>

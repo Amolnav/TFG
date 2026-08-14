@@ -1,26 +1,30 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+import { useConfig } from '../../context/useConfig';
 import type { ReservationConfirmation } from '../../types';
 
 interface Props {
   confirmation: ReservationConfirmation;
+  bookingData: { date: string; time: string; pax: number };
   onRestart: () => void;
 }
 
-export default function Step3Success({ confirmation, onRestart }: Props) {
+export default function Step3Success({ confirmation, bookingData, onRestart }: Props) {
   const { t, i18n } = useTranslation();
+  const { config } = useConfig();
   const { booking, customer, table } = confirmation;
 
-  const formattedDate = new Date(booking.date).toLocaleDateString(i18n.language || 'es', {
+  // BUG-44: se formatea la fecha/hora que el usuario SELECCIONÓ (hora local
+  // del restaurante), no booking.date convertido a la TZ del navegador: un
+  // cliente con el dispositivo en otra zona horaria veía una hora distinta.
+  const formattedDate = new Date(`${bookingData.date}T00:00:00`).toLocaleDateString(i18n.language || 'es', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
   });
 
-  const formattedTime = new Date(booking.date).toLocaleTimeString(i18n.language || 'es', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const formattedTime = bookingData.time;
 
   return (
     <div className="success-panel">
@@ -65,10 +69,21 @@ export default function Step3Success({ confirmation, onRestart }: Props) {
         )}
       </div>
 
-      <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.2)', borderRadius: '8px', textAlign: 'center' }}>
-        <p style={{ fontSize: '0.85rem', color: '#854d0e', margin: 0, fontWeight: 500 }}>
-          {t('reservation.modifyOrCancel')} <strong>+34 912 345 678</strong>
-        </p>
+      <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--badge-vip-bg)', border: '1px solid var(--badge-vip-border)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+        {/* N1.1: autogestión por enlace; el teléfono de config queda como fallback */}
+        {booking.manageToken ? (
+          <p style={{ fontSize: '0.85rem', color: 'var(--badge-vip-text)', margin: 0, fontWeight: 500 }}>
+            {t('reservation.manageHint')}{' '}
+            <Link to={`/reserva/${booking.manageToken}`} style={{ color: 'inherit', fontWeight: 700 }}>
+              {t('reservation.manageLink')}
+            </Link>
+          </p>
+        ) : (
+          <p style={{ fontSize: '0.85rem', color: 'var(--badge-vip-text)', margin: 0, fontWeight: 500 }}>
+            {/* BUG-44: el teléfono sale de la configuración, no hardcodeado */}
+            {t('reservation.modifyOrCancel')} <strong>{config.restaurant_phone}</strong>
+          </p>
+        )}
       </div>
 
       <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: '320px', marginTop: '1rem' }}>

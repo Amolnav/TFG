@@ -186,8 +186,8 @@ const Testimonials: React.FC = () => {
           )}
         </div>
 
-        <button className="carousel-nav prev" onClick={(e) => { e.stopPropagation(); prevSlide(); }} aria-label="Anterior">‹</button>
-        <button className="carousel-nav next" onClick={(e) => { e.stopPropagation(); nextSlide(); }} aria-label="Siguiente">›</button>
+        <button className="carousel-nav prev" onClick={(e) => { e.stopPropagation(); prevSlide(); }} aria-label={t('testimonials.prev')}>‹</button>
+        <button className="carousel-nav next" onClick={(e) => { e.stopPropagation(); nextSlide(); }} aria-label={t('testimonials.next')}>›</button>
 
         <div className="carousel-dots">
           {reviews.map((_, index) => (
@@ -195,7 +195,7 @@ const Testimonials: React.FC = () => {
               key={index}
               className={`dot ${index === currentIndex ? 'active' : ''}`}
               onClick={(e) => { e.stopPropagation(); setCurrentIndex(index); }}
-              aria-label={`Ir a reseña ${index + 1}`}
+              aria-label={t('testimonials.goToReview', { number: index + 1 })}
             />
           ))}
         </div>

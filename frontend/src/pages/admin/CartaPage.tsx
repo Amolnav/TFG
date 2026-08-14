@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { 
-  getAdminMenu, 
-  createMenuCategory, 
-  updateMenuCategory, 
-  deleteMenuCategory, 
-  createMenuItem, 
-  updateMenuItem, 
+import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  getAdminMenu,
+  createMenuCategory,
+  updateMenuCategory,
+  deleteMenuCategory,
+  createMenuItem,
+  updateMenuItem,
   deleteMenuItem,
   reorderMenuCategories,
   getSystemConfig,
@@ -13,7 +14,8 @@ import {
 } from '../../services/api';
 import '../../styles/pages/admin/AdminPages.css';
 import { DEFAULT_SPECIALTIES } from '../../constants/publicConfig';
-import type { MenuCategory, MenuItem, SpecialtiesConfig, SystemConfig } from '../../types';
+import { EU_ALLERGENS, ALLERGEN_ICONS } from '../../constants/allergens';
+import type { LocalizedText, MenuCategory, MenuItem, SpecialtiesConfig, SystemConfig } from '../../types';
 
 // DnD Kit Imports
 import {
@@ -36,17 +38,18 @@ import {
 } from '@dnd-kit/sortable';
 
 // Sub-component for Sortable Category Card
-function SortableCategoryCard({ 
-  category, 
-  onEditCategory, 
-  onEditItem, 
-  onAddItem 
-}: { 
-  category: MenuCategory; 
+function SortableCategoryCard({
+  category,
+  onEditCategory,
+  onEditItem,
+  onAddItem
+}: {
+  category: MenuCategory;
   onEditCategory: (c: MenuCategory) => void;
   onEditItem: (item: MenuItem, catId: number) => void;
   onAddItem: (catId: number) => void;
 }) {
+  const { t } = useTranslation();
   const {
     attributes,
     listeners,
@@ -60,21 +63,21 @@ function SortableCategoryCard({
     zIndex: isDragging ? 2 : 1,
     opacity: isDragging ? 0.3 : 1,
     border: isDragging ? '2px dashed var(--primary)' : undefined,
-    pointerEvents: isDragging ? 'none' as 'none' : 'auto' as 'auto',
+    pointerEvents: isDragging ? 'none' as const : 'auto' as const,
   };
 
   return (
     <div ref={setNodeRef} style={style} className="zone-card">
-      <div 
-        className="zone-card__header" 
-        {...attributes} 
-        {...listeners} 
+      <div
+        className="zone-card__header"
+        {...attributes}
+        {...listeners}
         style={{ cursor: 'grab', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
       >
         <span className="zone-card__name">
           <span style={{ marginRight: '0.75rem', opacity: 0.5 }}>⠿</span>
           📂 {category.name}
-          {!category.isActive && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', opacity: 0.6, fontStyle: 'italic' }}>(Inactiva)</span>}
+          {!category.isActive && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', opacity: 0.6, fontStyle: 'italic' }}>{t('admin.menu.inactiveCategory')}</span>}
         </span>
         <button
           onClick={(e) => {
@@ -83,13 +86,13 @@ function SortableCategoryCard({
           }}
           style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.5rem', borderRadius: '4px' }}
         >
-          Editar
+          {t('admin.common.edit')}
         </button>
       </div>
       <ul className="zone-card__tables">
         {category.items.length === 0 ? (
           <li className="zone-table-row" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-            Sin platos configurados
+            {t('admin.menu.noItems')}
           </li>
         ) : (
           category.items.map((item) => (
@@ -97,7 +100,7 @@ function SortableCategoryCard({
               <div style={{ flex: 1, paddingRight: '1rem' }}>
                 <span className="zone-table-row__name">{item.name}</span>
                 {!item.isActive && (
-                  <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', color: 'var(--accent-action)' }}>Inactivo</span>
+                  <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', color: 'var(--accent-action)' }}>{t('admin.menu.inactiveItem')}</span>
                 )}
                 {item.description && <p style={{ fontSize: '0.75rem', margin: 0, opacity: 0.7, color: 'var(--text-muted)' }}>{item.description}</p>}
               </div>
@@ -109,7 +112,7 @@ function SortableCategoryCard({
                   onClick={() => onEditItem(item, category.id)}
                   style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.8rem', textDecoration: 'underline' }}
                 >
-                  Editar
+                  {t('admin.common.edit')}
                 </button>
               </div>
             </li>
@@ -121,7 +124,7 @@ function SortableCategoryCard({
           onClick={() => onAddItem(category.id)}
           style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontWeight: 'bold' }}
         >
-          + Añadir Plato
+          {t('admin.menu.addItem')}
         </button>
       </div>
     </div>
@@ -129,12 +132,15 @@ function SortableCategoryCard({
 }
 
 export default function CartaPage() {
+  const { t } = useTranslation();
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeId, setActiveId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
+  // BUG-50: deshabilita los botones de guardar durante el envío (evita duplicados)
+  const [saving, setSaving] = useState(false);
 
   // Sensors for DnD
   const sensors = useSensors(
@@ -157,9 +163,12 @@ export default function CartaPage() {
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
 
   const [editingSpecialties, setEditingSpecialties] = useState<boolean>(false);
-  const [specialtiesForm, setSpecialtiesForm] = useState<SpecialtiesConfig>(DEFAULT_SPECIALTIES);
+  // BUG-46: el formulario trabaja SIEMPRE sobre una copia profunda. Con la
+  // referencia directa, las ediciones (copias superficiales + mutación del
+  // item) corrompían la constante DEFAULT_SPECIALTIES importada del módulo.
+  const [specialtiesForm, setSpecialtiesForm] = useState<SpecialtiesConfig>(() => structuredClone(DEFAULT_SPECIALTIES));
 
-  const loadMenu = () => {
+  const loadMenu = useCallback(() => {
     setLoading(true);
     Promise.all([
       getAdminMenu(),
@@ -168,14 +177,25 @@ export default function CartaPage() {
       .then(([menuData, configData]) => {
         setCategories(Array.isArray(menuData) ? menuData : []);
         setSystemConfig(configData);
+        setError(''); // BUG-50: una recarga con éxito limpia el error anterior
       })
-      .catch(() => setError('Error al cargar la carta.'))
+      .catch((err) => {
+        console.error(err);
+        setError(t('admin.menu.loadError'));
+      })
       .finally(() => setLoading(false));
-  };
+  }, [t]);
 
+  // Carga inicial de datos: patrón idiomático de fetch dentro de un efecto
   useEffect(() => {
     loadMenu();
-  }, []);
+  }, [loadMenu]);
+
+  // M5: los idiomas del editor salen de la configuración del despliegue
+  const editorLanguages = (systemConfig.languages_supported || 'es,en,fr')
+    .split(',')
+    .map((lang) => lang.trim())
+    .filter(Boolean);
 
   const handleEditSpecialtiesClick = () => {
     let parsedSpecialties: SpecialtiesConfig | null = null;
@@ -186,20 +206,46 @@ export default function CartaPage() {
     } catch (e) {
       console.error(e);
     }
-    
-    setSpecialtiesForm(parsedSpecialties || DEFAULT_SPECIALTIES);
+
+    // BUG-46: copia profunda para no mutar jamás DEFAULT_SPECIALTIES
+    setSpecialtiesForm(structuredClone(parsedSpecialties || DEFAULT_SPECIALTIES));
     setEditingSpecialties(true);
+  };
+
+  // M2: N platos — añadir y quitar en vez de "los 3 platos" fijos
+  const handleAddSpecialty = () => {
+    const nextId = specialtiesForm.items.reduce((max, item) => Math.max(max, item.id), 0) + 1;
+    setSpecialtiesForm({
+      ...specialtiesForm,
+      items: [...specialtiesForm.items, { id: nextId, name: {}, description: {}, image: '' }],
+    });
+  };
+
+  const handleRemoveSpecialty = (index: number) => {
+    setSpecialtiesForm({
+      ...specialtiesForm,
+      items: specialtiesForm.items.filter((_, i) => i !== index),
+    });
+  };
+
+  const updateSpecialtyField = (index: number, field: 'name' | 'description', lang: string, value: string) => {
+    const items = [...specialtiesForm.items];
+    items[index] = { ...items[index], [field]: { ...items[index][field], [lang]: value } as LocalizedText };
+    setSpecialtiesForm({ ...specialtiesForm, items });
   };
 
   const handleSaveSpecialties = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
     try {
       await updateSystemConfig({ specialties_config: JSON.stringify(specialtiesForm) });
       setEditingSpecialties(false);
       loadMenu();
     } catch (err) {
       console.error(err);
-      alert('Error al actualizar especialidades');
+      alert(t('admin.menu.specialtiesUpdateError'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -218,18 +264,19 @@ export default function CartaPage() {
     const { active, over } = event;
     setActiveId(null);
     setOverId(null);
-    
+
     if (over && active.id !== over.id) {
       const oldIndex = categories.findIndex((c) => c.id === active.id);
       const newIndex = categories.findIndex((c) => c.id === over.id);
-      
+
       const newOrder = arrayMove(categories, oldIndex, newIndex);
       setCategories(newOrder);
 
       try {
         await reorderMenuCategories(newOrder.map(c => c.id));
       } catch (err) {
-        alert('Error al guardar el nuevo orden');
+        console.error(err);
+        alert(t('admin.menu.reorderError'));
         loadMenu(); // Rollback
       }
     }
@@ -250,6 +297,7 @@ export default function CartaPage() {
       displayOrder: Number(formData.get('displayOrder')) || 0,
     };
 
+    setSaving(true);
     try {
       if (editingCategory) {
         await updateMenuCategory(editingCategory.id, payload);
@@ -259,20 +307,27 @@ export default function CartaPage() {
       setIsCategoryModalOpen(false);
       loadMenu();
     } catch (err) {
-      alert('Error al guardar categoría');
+      console.error(err);
+      alert(t('admin.menu.saveCategoryError'));
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDeleteCategory = async () => {
     if (!editingCategory) return;
-    if (!window.confirm(`¿Estás seguro de que deseas eliminar la categoría "${editingCategory.name}"? Se borrarán todos sus platos.`)) return;
-    
+    if (!window.confirm(t('admin.menu.deleteCategoryConfirm', { name: editingCategory.name }))) return;
+
+    setSaving(true);
     try {
       await deleteMenuCategory(editingCategory.id);
       setIsCategoryModalOpen(false);
       loadMenu();
     } catch (err) {
-      alert('Error al eliminar categoría.');
+      console.error(err);
+      alert(t('admin.menu.deleteCategoryError'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -285,9 +340,13 @@ export default function CartaPage() {
       price: formData.get('price') as string,
       isActive: formData.get('isActive') === 'on',
       displayOrder: Number(formData.get('displayOrder')) || 0,
-      categoryId: activeCategoryId
+      categoryId: activeCategoryId,
+      // N3.3: alérgenos UE marcados + foto opcional
+      allergens: formData.getAll('allergens') as string[],
+      photoUrl: (formData.get('photoUrl') as string).trim() || null
     };
 
+    setSaving(true);
     try {
       if (editingItem) {
         await updateMenuItem(editingItem.id, payload);
@@ -297,20 +356,27 @@ export default function CartaPage() {
       setIsItemModalOpen(false);
       loadMenu();
     } catch (err) {
-      alert('Error al guardar plato');
+      console.error(err);
+      alert(t('admin.menu.saveItemError'));
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDeleteItem = async () => {
     if (!editingItem) return;
-    if (!window.confirm(`¿Estás seguro de que deseas eliminar el plato "${editingItem.name}"?`)) return;
-    
+    if (!window.confirm(t('admin.menu.deleteItemConfirm', { name: editingItem.name }))) return;
+
+    setSaving(true);
     try {
       await deleteMenuItem(editingItem.id);
       setIsItemModalOpen(false);
       loadMenu();
     } catch (err) {
-      alert('Error al eliminar plato');
+      console.error(err);
+      alert(t('admin.menu.deleteItemError'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -318,8 +384,8 @@ export default function CartaPage() {
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h1>Gestión de Carta</h1>
-          <p>Administra las categorías y platos de tu menú</p>
+          <h1>{t('admin.menu.title')}</h1>
+          <p>{t('admin.menu.subtitle')}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button
@@ -327,7 +393,7 @@ export default function CartaPage() {
             className="btn btn-secondary"
             style={{ padding: '0.6rem 1.25rem', background: 'var(--input-bg)', color: 'var(--text-dark)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
           >
-            🌟 Platos Destacados
+            🌟 {t('admin.menu.featuredDishes')}
           </button>
           <button
             onClick={() => {
@@ -337,12 +403,12 @@ export default function CartaPage() {
             className="btn btn-primary"
             style={{ padding: '0.6rem 1.25rem', background: 'var(--accent-action)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
           >
-            + Nueva Categoría
+            {t('admin.menu.newCategory')}
           </button>
         </div>
       </div>
 
-      {loading && <div className="state-loading"><span className="spinner">⏳</span> Cargando carta...</div>}
+      {loading && <div className="state-loading"><span className="spinner">⏳</span> {t('admin.menu.loading')}</div>}
       {error && <div className="state-error"><span>⚠️</span>{error}</div>}
 
       {!loading && !error && (
@@ -350,41 +416,44 @@ export default function CartaPage() {
           <div className="widgets-grid" style={{ marginBottom: '1.75rem' }}>
             <div className="widget-card accent-primary">
               <div className="widget-card__icon">📂</div>
-              <div className="widget-card__label">Categorías</div>
+              <div className="widget-card__label">{t('admin.menu.categoriesWidget')}</div>
               <div className="widget-card__value">{categories.length}</div>
-              <div className="widget-card__sub">{categories.filter(c => c.isActive).length} activas</div>
+              <div className="widget-card__sub">{t('admin.menu.activeCountF', { n: categories.filter(c => c.isActive).length })}</div>
             </div>
             <div className="widget-card accent-decor">
               <div className="widget-card__icon">🍽️</div>
-              <div className="widget-card__label">Platos totales</div>
+              <div className="widget-card__label">{t('admin.menu.totalItemsWidget')}</div>
               <div className="widget-card__value">{totalItems}</div>
-              <div className="widget-card__sub">{activeItems} activos</div>
+              <div className="widget-card__sub">{t('admin.menu.activeCountM', { n: activeItems })}</div>
             </div>
           </div>
 
           {categories.length === 0 ? (
             <div className="state-empty">
               <span style={{ fontSize: '2rem' }}>📜</span>
-              No hay categorías en la carta. Añade categorías y platos para empezar.
+              {t('admin.menu.empty')}
             </div>
           ) : (
-            <DndContext 
+            <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragStart={handleDragStart}
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext 
+              <SortableContext
                 items={categories.map(c => c.id)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="zones-grid">
                   {categories.map((category) => (
-                    <SortableCategoryCard 
+                    <SortableCategoryCard
                       key={category.id}
                       category={category}
-                      onEditCategory={setEditingCategory}
+                      onEditCategory={(c) => {
+                        setEditingCategory(c);
+                        setIsCategoryModalOpen(true);
+                      }}
                       onEditItem={(item, catId) => {
                         setEditingItem(item);
                         setActiveCategoryId(catId);
@@ -419,7 +488,7 @@ export default function CartaPage() {
                     whiteSpace: 'nowrap'
                   }}>
                     <span style={{ fontSize: '1.4rem' }}>📍</span>
-                    Moviendo a posición #{currentOverIndex + 1}
+                    {t('admin.menu.movingToPosition', { position: currentOverIndex + 1 })}
                   </div>
                 ) : null}
               </DragOverlay>
@@ -433,39 +502,39 @@ export default function CartaPage() {
         <div className="admin-modal-overlay">
           <div className="admin-modal">
             <div className="admin-modal__header">
-              <h2>{editingCategory ? 'Editar Categoría' : 'Nueva Categoría'}</h2>
+              <h2>{editingCategory ? t('admin.menu.editCategory') : t('admin.menu.newCategoryTitle')}</h2>
               <button className="admin-modal__close" onClick={() => setIsCategoryModalOpen(false)}>×</button>
             </div>
             <form onSubmit={handleSaveCategory}>
               <div className="admin-modal__body">
                 <div className="admin-modal__form-group">
-                  <label>Nombre</label>
-                  <input type="text" name="name" required defaultValue={editingCategory?.name || ''} placeholder="Ej: Entrantes Fríos" />
+                  <label>{t('admin.common.name')}</label>
+                  <input type="text" name="name" required defaultValue={editingCategory?.name || ''} placeholder={t('admin.menu.categoryNamePlaceholder')} />
                 </div>
                 <div className="admin-modal__form-group">
-                  <label>Descripción</label>
+                  <label>{t('admin.common.description')}</label>
                   <textarea name="description" rows={2} defaultValue={editingCategory?.description || ''}></textarea>
                 </div>
                 <div className="admin-modal__form-group">
-                  <label>Orden de visualización</label>
+                  <label>{t('admin.common.displayOrder')}</label>
                   <input type="number" name="displayOrder" defaultValue={editingCategory?.displayOrder || 0} />
                 </div>
                 <div className="admin-modal__form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}>
                   <input type="checkbox" name="isActive" id="catIsActive" defaultChecked={editingCategory ? editingCategory.isActive : true} />
-                  <label htmlFor="catIsActive">Categoría Activa</label>
+                  <label htmlFor="catIsActive">{t('admin.menu.categoryActive')}</label>
                 </div>
               </div>
               <div className="admin-modal__footer">
                 {editingCategory && (
-                  <button type="button" onClick={handleDeleteCategory} style={{ padding: '0.5rem 1rem', background: 'var(--accent-danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: 'auto' }}>
-                    Borrar
+                  <button type="button" onClick={handleDeleteCategory} disabled={saving} style={{ padding: '0.5rem 1rem', background: 'var(--accent-danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: 'auto' }}>
+                    {t('admin.common.delete')}
                   </button>
                 )}
                 <button type="button" onClick={() => setIsCategoryModalOpen(false)} style={{ padding: '0.5rem 1rem', background: 'var(--input-bg)', color: 'var(--text-dark)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}>
-                  Cancelar
+                  {t('admin.common.cancel')}
                 </button>
-                <button type="submit" style={{ padding: '0.5rem 1rem', background: 'var(--accent-action)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-                  Guardar
+                <button type="submit" disabled={saving} style={{ padding: '0.5rem 1rem', background: 'var(--accent-action)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  {saving ? t('admin.common.saving') : t('admin.common.save')}
                 </button>
               </div>
             </form>
@@ -478,45 +547,72 @@ export default function CartaPage() {
         <div className="admin-modal-overlay">
           <div className="admin-modal">
             <div className="admin-modal__header">
-              <h2>{editingItem ? 'Editar Plato' : 'Nuevo Plato'}</h2>
+              <h2>{editingItem ? t('admin.menu.editItem') : t('admin.menu.newItemTitle')}</h2>
               <button className="admin-modal__close" onClick={() => setIsItemModalOpen(false)}>×</button>
             </div>
             <form onSubmit={handleSaveItem}>
               <div className="admin-modal__body">
                 <div className="admin-modal__form-group">
-                  <label>Nombre del plato</label>
-                  <input type="text" name="name" required defaultValue={editingItem?.name || ''} placeholder="Ej: Croquetas caseras" />
+                  <label>{t('admin.menu.itemName')}</label>
+                  <input type="text" name="name" required defaultValue={editingItem?.name || ''} placeholder={t('admin.menu.itemNamePlaceholder')} />
                 </div>
                 <div className="admin-modal__form-group">
-                  <label>Descripción</label>
-                  <textarea name="description" rows={2} defaultValue={editingItem?.description || ''} placeholder="Ingredientes, alérgenos..."></textarea>
+                  <label>{t('admin.common.description')}</label>
+                  <textarea name="description" rows={2} defaultValue={editingItem?.description || ''} placeholder={t('admin.menu.itemDescriptionPlaceholder')}></textarea>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="admin-modal__form-group">
-                    <label>Precio</label>
-                    <input type="text" name="price" required defaultValue={editingItem?.price || ''} placeholder="Ej: 12€ o S.M." />
+                    <label>{t('admin.menu.price')}</label>
+                    <input type="text" name="price" required defaultValue={editingItem?.price || ''} placeholder={t('admin.menu.pricePlaceholder')} />
                   </div>
                   <div className="admin-modal__form-group">
-                    <label>Orden</label>
+                    <label>{t('admin.menu.order')}</label>
                     <input type="number" name="displayOrder" defaultValue={editingItem?.displayOrder || 0} />
                   </div>
                 </div>
+                {/* N3.3: los 14 alérgenos UE como opciones */}
+                <div className="admin-modal__form-group" style={{ marginTop: '1rem' }}>
+                  <label>{t('admin.menu.allergensLabel')}</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.35rem 1rem' }}>
+                    {EU_ALLERGENS.map((key) => (
+                      <label key={key} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontWeight: 'normal', fontSize: '0.85rem' }}>
+                        <input
+                          type="checkbox"
+                          name="allergens"
+                          value={key}
+                          defaultChecked={editingItem?.allergens?.includes(key) ?? false}
+                        />
+                        {ALLERGEN_ICONS[key]} {t(`allergens.${key}`)}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* N3.3: foto del plato por URL (sin subida de ficheros) */}
+                <div className="admin-modal__form-group">
+                  <label>{t('admin.menu.photoLabel')}</label>
+                  <input
+                    type="text"
+                    name="photoUrl"
+                    defaultValue={editingItem?.photoUrl || ''}
+                    placeholder={t('admin.menu.photoPlaceholder')}
+                  />
+                </div>
                 <div className="admin-modal__form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem', marginTop: '1rem' }}>
                   <input type="checkbox" name="isActive" id="itemIsActive" defaultChecked={editingItem ? editingItem.isActive : true} />
-                  <label htmlFor="itemIsActive">Plato Activo</label>
+                  <label htmlFor="itemIsActive">{t('admin.menu.itemActive')}</label>
                 </div>
               </div>
               <div className="admin-modal__footer">
                 {editingItem && (
-                  <button type="button" onClick={handleDeleteItem} style={{ padding: '0.5rem 1rem', background: 'var(--accent-danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: 'auto' }}>
-                    Borrar
+                  <button type="button" onClick={handleDeleteItem} disabled={saving} style={{ padding: '0.5rem 1rem', background: 'var(--accent-danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: 'auto' }}>
+                    {t('admin.common.delete')}
                   </button>
                 )}
                 <button type="button" onClick={() => setIsItemModalOpen(false)} style={{ padding: '0.5rem 1rem', background: 'var(--input-bg)', color: 'var(--text-dark)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}>
-                  Cancelar
+                  {t('admin.common.cancel')}
                 </button>
-                <button type="submit" style={{ padding: '0.5rem 1rem', background: 'var(--accent-action)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-                  Guardar
+                <button type="submit" disabled={saving} style={{ padding: '0.5rem 1rem', background: 'var(--accent-action)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  {saving ? t('admin.common.saving') : t('admin.common.save')}
                 </button>
               </div>
             </form>
@@ -529,97 +625,87 @@ export default function CartaPage() {
         <div className="admin-modal-overlay">
           <div className="admin-modal" style={{ maxWidth: '800px', width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="admin-modal__header">
-              <h2>Editar Especialidades (Inicio)</h2>
+              <h2>{t('admin.menu.specialtiesTitle')}</h2>
               <button className="admin-modal__close" type="button" onClick={() => setEditingSpecialties(false)}>×</button>
             </div>
             <div className="admin-modal__body">
               <form id="specialties-form" onSubmit={handleSaveSpecialties} className="admin-modal__form-group" style={{ gap: '1.25rem' }}>
                 <div style={{ padding: '1rem', background: 'var(--bg-light)', borderRadius: '8px' }}>
-                  <h3 style={{ marginTop: 0 }}>Título de la sección</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.8rem' }}>Español</label>
-                      <input required type="text" value={specialtiesForm.title?.es || ''} onChange={(e) => setSpecialtiesForm({ ...specialtiesForm, title: { ...specialtiesForm.title, es: e.target.value } })} />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.8rem' }}>Inglés</label>
-                      <input required type="text" value={specialtiesForm.title?.en || ''} onChange={(e) => setSpecialtiesForm({ ...specialtiesForm, title: { ...specialtiesForm.title, en: e.target.value } })} />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.8rem' }}>Francés</label>
-                      <input required type="text" value={specialtiesForm.title?.fr || ''} onChange={(e) => setSpecialtiesForm({ ...specialtiesForm, title: { ...specialtiesForm.title, fr: e.target.value } })} />
-                    </div>
+                  <h3 style={{ marginTop: 0 }}>{t('admin.menu.sectionTitleLabel')}</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(editorLanguages.length, 3)}, 1fr)`, gap: '1rem' }}>
+                    {editorLanguages.map((lang) => (
+                      <div key={lang}>
+                        <label style={{ fontSize: '0.8rem' }}>{t('admin.menu.titleLang', { lang: lang.toUpperCase() })}</label>
+                        <input
+                          required
+                          type="text"
+                          value={specialtiesForm.title?.[lang] || ''}
+                          onChange={(e) => setSpecialtiesForm({ ...specialtiesForm, title: { ...specialtiesForm.title, [lang]: e.target.value } })}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <h3 style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>Los 3 Platos Especiales</h3>
+                {/* M2: N platos destacados, con añadir/quitar */}
+                <h3 style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>{t('admin.menu.specialDishes')}</h3>
                 {specialtiesForm.items?.map((item, idx: number) => (
                   <div key={item.id} style={{ padding: '1rem', background: 'var(--bg-light)', borderRadius: '8px', marginBottom: '1rem' }}>
-                    <h4 style={{ marginTop: 0 }}>Plato {idx + 1}</h4>
-                    <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ fontSize: '0.8rem' }}>URL de Imagen</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 style={{ marginTop: 0, marginBottom: 0 }}>{t('admin.menu.dishNumber', { number: idx + 1 })}</h4>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSpecialty(idx)}
+                        style={{ background: 'var(--accent-danger)', color: 'white', border: 'none', borderRadius: '4px', padding: '0.25rem 0.6rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+                      >
+                        {t('admin.menu.removeDish')}
+                      </button>
+                    </div>
+                    <div style={{ margin: '0.75rem 0 1rem' }}>
+                      <label style={{ fontSize: '0.8rem' }}>{t('admin.menu.imageUrl')}</label>
                       <input required type="text" value={item.image || ''} onChange={(e) => {
                         const newItems = [...specialtiesForm.items];
-                        newItems[idx].image = e.target.value;
+                        newItems[idx] = { ...newItems[idx], image: e.target.value };
                         setSpecialtiesForm({ ...specialtiesForm, items: newItems });
                       }} />
                     </div>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                      <div>
-                        <label style={{ fontSize: '0.8rem' }}>Nombre (ES)</label>
-                        <input required type="text" value={item.name?.es || ''} onChange={(e) => {
-                          const newItems = [...specialtiesForm.items];
-                          newItems[idx].name.es = e.target.value;
-                          setSpecialtiesForm({ ...specialtiesForm, items: newItems });
-                        }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '0.8rem' }}>Nombre (EN)</label>
-                        <input required type="text" value={item.name?.en || ''} onChange={(e) => {
-                          const newItems = [...specialtiesForm.items];
-                          newItems[idx].name.en = e.target.value;
-                          setSpecialtiesForm({ ...specialtiesForm, items: newItems });
-                        }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '0.8rem' }}>Nombre (FR)</label>
-                        <input required type="text" value={item.name?.fr || ''} onChange={(e) => {
-                          const newItems = [...specialtiesForm.items];
-                          newItems[idx].name.fr = e.target.value;
-                          setSpecialtiesForm({ ...specialtiesForm, items: newItems });
-                        }} />
-                      </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(editorLanguages.length, 3)}, 1fr)`, gap: '1rem', marginBottom: '1rem' }}>
+                      {editorLanguages.map((lang) => (
+                        <div key={lang}>
+                          <label style={{ fontSize: '0.8rem' }}>{t('admin.menu.nameLang', { lang: lang.toUpperCase() })}</label>
+                          <input
+                            required
+                            type="text"
+                            value={item.name?.[lang] || ''}
+                            onChange={(e) => updateSpecialtyField(idx, 'name', lang, e.target.value)}
+                          />
+                        </div>
+                      ))}
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                      <div>
-                        <label style={{ fontSize: '0.8rem' }}>Descripción (ES)</label>
-                        <textarea rows={2} required value={item.description?.es || ''} onChange={(e) => {
-                          const newItems = [...specialtiesForm.items];
-                          newItems[idx].description.es = e.target.value;
-                          setSpecialtiesForm({ ...specialtiesForm, items: newItems });
-                        }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '0.8rem' }}>Descripción (EN)</label>
-                        <textarea rows={2} required value={item.description?.en || ''} onChange={(e) => {
-                          const newItems = [...specialtiesForm.items];
-                          newItems[idx].description.en = e.target.value;
-                          setSpecialtiesForm({ ...specialtiesForm, items: newItems });
-                        }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '0.8rem' }}>Descripción (FR)</label>
-                        <textarea rows={2} required value={item.description?.fr || ''} onChange={(e) => {
-                          const newItems = [...specialtiesForm.items];
-                          newItems[idx].description.fr = e.target.value;
-                          setSpecialtiesForm({ ...specialtiesForm, items: newItems });
-                        }} />
-                      </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(editorLanguages.length, 3)}, 1fr)`, gap: '1rem' }}>
+                      {editorLanguages.map((lang) => (
+                        <div key={lang}>
+                          <label style={{ fontSize: '0.8rem' }}>{t('admin.menu.descriptionLang', { lang: lang.toUpperCase() })}</label>
+                          <textarea
+                            rows={2}
+                            required
+                            value={item.description?.[lang] || ''}
+                            onChange={(e) => updateSpecialtyField(idx, 'description', lang, e.target.value)}
+                          />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
+                <button
+                  type="button"
+                  onClick={handleAddSpecialty}
+                  style={{ alignSelf: 'flex-start', background: 'transparent', border: '1px solid var(--border)', borderRadius: '4px', padding: '0.4rem 0.9rem', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  {t('admin.menu.addDish')}
+                </button>
               </form>
             </div>
             <div className="admin-modal__footer">
@@ -628,14 +714,15 @@ export default function CartaPage() {
                 onClick={() => setEditingSpecialties(false)}
                 style={{ padding: '0.5rem 1.25rem', background: 'transparent', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
               >
-                Cancelar
+                {t('admin.common.cancel')}
               </button>
               <button
                 type="submit"
                 form="specialties-form"
+                disabled={saving}
                 style={{ padding: '0.5rem 1.25rem', background: 'var(--accent-action)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
               >
-                Guardar Cambios
+                {saving ? t('admin.common.saving') : t('admin.common.saveChanges')}
               </button>
             </div>
           </div>

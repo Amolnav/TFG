@@ -1,0 +1,155 @@
+/* N2.3: hoja de servicio imprimible */
+
+.service-sheet__print-header {
+  display: none;
+}
+
+.service-sheet__summary {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+}
+
+.service-sheet__table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card-bg, var(--white));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+  font-size: 0.88rem;
+}
+
+.service-sheet__table th {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  background: var(--table-header-bg, var(--bg-light));
+  color: var(--text-dark);
+  border-bottom: 2px solid var(--border);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.service-sheet__table td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dark);
+  vertical-align: top;
+}
+
+.service-sheet__time {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.service-sheet__pax {
+  font-weight: 700;
+  text-align: center;
+}
+
+.service-sheet__zone {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.service-sheet__vip {
+  color: var(--accent-decor, #b45309);
+  font-weight: 700;
+}
+
+/* Alérgenos: SIEMPRE destacados, también en blanco y negro */
+.service-sheet__allergens {
+  font-weight: 700;
+  color: var(--accent-danger, #b91c1c);
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.service-sheet__none {
+  color: var(--text-muted);
+}
+
+.service-sheet__notes {
+  font-size: 0.82rem;
+  max-width: 260px;
+}
+
+/* ── Impresión ──────────────────────────────────────────────────────── */
+@media print {
+  /* Solo la hoja: fuera panel, navegación y controles */
+  .admin-sidebar,
+  .admin-topbar,
+  .sidebar-overlay,
+  .no-print {
+    display: none !important;
+  }
+
+  .admin-main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .admin-content {
+    padding: 0 !important;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .service-sheet__print-header {
+    display: block;
+    margin-bottom: 0.75rem;
+    border-bottom: 2px solid #000;
+    padding-bottom: 0.5rem;
+  }
+
+  .service-sheet__print-header h1 {
+    font-size: 1.2rem;
+    margin: 0;
+  }
+
+  .service-sheet__print-header p {
+    margin: 0.15rem 0 0;
+    font-size: 0.9rem;
+  }
+
+  .service-sheet__summary {
+    color: #000;
+  }
+
+  .service-sheet__table {
+    border: 1px solid #000;
+    border-radius: 0;
+    font-size: 11px;
+  }
+
+  .service-sheet__table th {
+    background: #eee !important;
+    color: #000;
+    border-bottom: 1px solid #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .service-sheet__table td {
+    border-bottom: 1px solid #999;
+    color: #000;
+  }
+
+  .service-sheet__allergens {
+    color: #000;
+    background: #ffe4e4 !important;
+    padding: 0 0.2rem;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .service-sheet__table tr {
+    break-inside: avoid;
+  }
+}

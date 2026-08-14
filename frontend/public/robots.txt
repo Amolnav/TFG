@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+
+# El sitemap lo genera el backend con los idiomas activos del restaurante
+Sitemap: /sitemap.xml

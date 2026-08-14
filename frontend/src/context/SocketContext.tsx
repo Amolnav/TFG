@@ -1,42 +1,40 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ReactNode } from 'react';
 import { SocketContext } from './socketContextImpl';
+import { getToken } from '../utils/session';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 
+// BUG-39: el socket se crea dentro del efecto (no en un useMemo, cuyo valor
+// React puede descartar y que en StrictMode creaba instancias huérfanas sin
+// disconnect). El token se lee al montar el provider, que vive dentro de
+// ProtectedRoute: tras cada login el provider se remonta con el token nuevo.
 export function SocketProvider({ children }: { children: ReactNode }) {
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  const socket = useMemo<Socket | null>(() => {
-    const token = localStorage.getItem('admin_token');
+  useEffect(() => {
+    const token = getToken();
     if (!token) {
-      return null;
+      return undefined;
     }
 
-    return io(SOCKET_URL, {
+    const instance = io(SOCKET_URL, {
       auth: { token },
       autoConnect: false,
       transports: ['websocket', 'polling'],
       path: '/socket.io'
     });
-  }, []);
-
-  useEffect(() => {
-    if (!socket) {
-      return undefined;
-    }
 
     const handleConnect = () => {
       setIsConnected(true);
       setConnectionError(null);
-      console.log('Socket.io conectado:', socket.id);
     };
 
-    const handleDisconnect = (reason: string) => {
+    const handleDisconnect = () => {
       setIsConnected(false);
-      console.log('Socket.io desconectado:', reason);
     };
 
     const handleConnectError = (error: Error | string) => {
@@ -45,19 +43,24 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       console.warn('Socket.io error de conexión:', message);
     };
 
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('connect_error', handleConnectError);
+    instance.on('connect', handleConnect);
+    instance.on('disconnect', handleDisconnect);
+    instance.on('connect_error', handleConnectError);
 
-    socket.connect();
+    instance.connect();
+    // Guardar la instancia en estado es el patrón de suscripción a un sistema
+    // externo; el efecto es el lugar correcto para crear/destruir el socket.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSocket(instance);
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('connect_error', handleConnectError);
-      socket.disconnect();
+      instance.off('connect', handleConnect);
+      instance.off('disconnect', handleDisconnect);
+      instance.off('connect_error', handleConnectError);
+      instance.disconnect();
+      setSocket(null);
     };
-  }, [socket]);
+  }, []);
 
   return (
     <SocketContext.Provider value={{ socket, isConnected, connectionError }}>

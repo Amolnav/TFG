@@ -73,7 +73,7 @@
 
 .customers-filter input[type='checkbox'] {
   cursor: pointer;
-  accent-color: #4CAF50;
+  accent-color: var(--success);
 }
 
 /* Table */
@@ -332,7 +332,7 @@
 
 .allergen-checkbox input[type='checkbox'] {
   cursor: pointer;
-  accent-color: #4CAF50;
+  accent-color: var(--success);
 }
 
 .allergen-checkbox span {
@@ -363,7 +363,7 @@
 
 .tag-checkbox input[type='checkbox'] {
   cursor: pointer;
-  accent-color: #4CAF50;
+  accent-color: var(--success);
 }
 
 .tag-checkbox span {

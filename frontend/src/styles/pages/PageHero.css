@@ -4,7 +4,8 @@
   position: relative;
   padding: 8rem 0;
   text-align: center;
-  background-image: url('/img/Home.png');
+  /* M3: la imagen real la inyectan las páginas desde la configuración */
+  background-image: linear-gradient(160deg, var(--primary) 0%, var(--primary-light) 100%);
   background-size: cover;
   background-position: center;
   color: var(--white);

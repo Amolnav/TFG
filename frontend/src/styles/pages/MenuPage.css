@@ -51,7 +51,7 @@
   padding-bottom: 0.75rem;
   margin-bottom: 2rem;
   font-size: 1.75rem;
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
 }
 
 .menu-section__desc {
@@ -118,7 +118,7 @@
 .menu-thanks h3 {
   margin-bottom: 1.5rem;
   color: var(--primary);
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
 }
 
 .menu-thanks p {
@@ -147,4 +147,42 @@
   .menu-thanks {
     padding: 2rem 1.5rem;
   }
+}
+
+/* ── N3.3: foto y alérgenos por plato ───────────────────────────────── */
+.menu-item {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.menu-item__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.menu-item__photo {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 8px);
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+}
+
+.menu-item__allergens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.menu-item__allergen {
+  font-size: 0.68rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  color: var(--text-muted);
+  background: var(--bg-light);
+  white-space: nowrap;
 }

@@ -1,17 +1,26 @@
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createReservation } from '../../services/api';
+import { getBaseLanguage } from '../../utils/i18n';
+import { translateApiError } from '../../utils/apiErrors';
+import { useConfig } from '../../context/useConfig';
+import TurnstileWidget from './TurnstileWidget';
 import type { ReservationConfirmation } from '../../types';
 
 interface Props {
-  bookingData: { date: string; time: string; pax: number };
+  bookingData: { date: string; time: string; pax: number; zoneId?: number };
   onNext: (confirmation: ReservationConfirmation) => void;
   onBack: () => void;
 }
 
+// BUG-43: validación cliente alineada con la del backend
+const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_FORMAT = /^\+?\d{9,15}$/;
+
 export default function Step2User({ bookingData, onNext, onBack }: Props) {
   const { t, i18n } = useTranslation();
+  const { config } = useConfig();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -20,39 +29,57 @@ export default function Step2User({ bookingData, onNext, onBack }: Props) {
   const [allergies, setAllergies] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // N4.1: captcha Turnstile activable por configuración
+  const captchaActive = config.captcha_enabled === 'true' && Boolean(config.captcha_site_key);
+  const [captchaToken, setCaptchaToken] = useState('');
+  // BUG-43: guardia de reentrada — un doble clic antes del re-render podía
+  // disparar createReservation dos veces y duplicar la reserva
+  const submittingRef = useRef(false);
 
   const validate = (): string => {
     if (!firstName.trim()) return t('reservation.errorFirstName');
     if (!lastName.trim()) return t('reservation.errorLastName');
-    if (!email.trim() || !email.includes('@')) return t('reservation.errorEmail');
-    if (!phone.trim()) return t('reservation.errorPhone');
+    if (!email.trim() || !EMAIL_FORMAT.test(email.trim())) return t('reservation.errorEmail');
+    if (!PHONE_FORMAT.test(phone.replace(/[\s\-()]/g, ''))) return t('reservation.errorPhone');
+    if (captchaActive && !captchaToken) return t('reservation.errorCaptcha');
     return '';
   };
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     const validationError = validate();
     if (validationError) { setError(validationError); return; }
+    submittingRef.current = true;
     setError('');
     setLoading(true);
     try {
+      const allergens = allergies.trim()
+        ? allergies.split(',').map(s => s.trim()).filter(Boolean)
+        : undefined;
       const result = await createReservation({
         date: bookingData.date,
         time: bookingData.time,
         pax: bookingData.pax,
+        zoneId: bookingData.zoneId,
         specialRequests: specialRequests.trim() || undefined,
-        customer: { 
-          firstName, 
-          lastName, 
-          email, 
+        captchaToken: captchaActive ? captchaToken : undefined,
+        customer: {
+          firstName,
+          lastName,
+          email,
           phone,
-          allergens: allergies.trim() ? allergies.split(',').map(s => s.trim()) : undefined
+          allergens,
+          // M5: se guarda el idioma con el que el cliente reservó para que
+          // los emails le lleguen en su idioma
+          language: getBaseLanguage(i18n.language)
         },
       });
       onNext(result);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { message?: string } } };
-      setError(axiosErr?.response?.data?.message ?? t('reservation.errorCreate'));
+      // M5: los errores de la API se traducen por su código estable
+      setError(translateApiError(err, 'reservation.errorCreate', t, i18n));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -133,6 +160,12 @@ export default function Step2User({ bookingData, onNext, onBack }: Props) {
             rows={2}
           />
         </div>
+
+        {captchaActive && (
+          <div className="form-group">
+            <TurnstileWidget siteKey={config.captcha_site_key} onToken={setCaptchaToken} />
+          </div>
+        )}
 
         {error && <div className="error-msg">{error}</div>}
 

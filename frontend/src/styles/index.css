@@ -1,5 +1,7 @@
 /* ============================================================
-   MESÓN MARINERO — Global Styles
+   Global Styles — base white-label
+   Los colores y fuentes de MARCA llegan de la configuración
+   (bloque :root inyectado por ConfigProvider, plan M3).
    ============================================================ */
 
 /* --- CSS Variables --- */
@@ -20,8 +22,14 @@
   --shadow-md: 0 10px 15px -3px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 20px 25px -5px rgba(15, 23, 42, 0.1);
   --radius: 16px;
+  --radius-md: 12px;
   --radius-sm: 10px;
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Tipografías de marca (M3): el bloque :root inyectado desde la
+     configuración sobreescribe estos defaults neutros */
+  --font-heading: 'Playfair Display', Georgia, serif;
+  --font-body: 'Lato', 'Helvetica Neue', sans-serif;
   /* Glassmorphism */
   --glass-bg: rgba(7, 28, 68, 0.92);
   --glass-border: rgba(255, 255, 255, 0.12);
@@ -45,6 +53,33 @@
   --status-completed: #7f8c8d;
   --status-cancelled: #EF4444;
   --status-no-show: #2c3e50;
+
+  /* Texto de los badges de estado (M3: antes hex sueltos) */
+  --status-pending-text: #b07d00;
+  --status-confirmed-text: #1a7a42;
+  --status-reconfirmed-text: #1a5276;
+  --status-completed-text: #555555;
+  --status-cancelled-text: #c81e1e;
+  --status-no-show-text: #2c3e50;
+
+  /* Éxito / peligro (M3) */
+  --success: #27ae60;
+  --success-dark: #1e8449;
+  --danger-strong: #b91c1c;
+  --danger-light: #fca5a5;
+  --accent-star: #fbbc04;
+
+  /* Badges de cliente (VIP / blacklist / etiquetas / alergias) */
+  --badge-vip-bg: #fef9c3;
+  --badge-vip-text: #854d0e;
+  --badge-vip-border: #fde047;
+  --badge-danger-bg: #fee2e2;
+  --badge-danger-text: #991b1b;
+  --badge-danger-border: #fecaca;
+  --badge-info-bg: #e0f2fe;
+  --badge-info-text: #075985;
+  --badge-info-border: #bae6fd;
+  --allergy-text: #dc2626;
 }
 
 [data-theme='dark'] {
@@ -77,6 +112,18 @@
   /* Status overrides for dark mode readability if needed */
   --status-seated: #94A3B8;
   --status-no-show: #475569;
+
+  /* Badges de cliente en modo oscuro (M3) */
+  --badge-vip-bg: #422006;
+  --badge-vip-text: #fde047;
+  --badge-vip-border: #713f12;
+  --badge-danger-bg: #450a0a;
+  --badge-danger-text: #fca5a5;
+  --badge-danger-border: #7f1d1d;
+  --badge-info-bg: #082f49;
+  --badge-info-text: #7dd3fc;
+  --badge-info-border: #0c4a6e;
+  --allergy-text: #fca5a5;
 }
 
 /* --- Animations --- */
@@ -92,29 +139,40 @@
   }
 }
 
+/* BUG-51: reveal on-scroll reactivado (antes estaba forzado a opacity:1
+   !important y todo el sistema de IntersectionObserver era código muerto) */
 .reveal {
-  /* Sin animaciones: siempre visible */
-  opacity: 1 !important;
-  transform: none !important;
-  transition: none !important;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
 }
 
 .reveal.active {
-  opacity: 1 !important;
-  transform: none !important;
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Delay modifiers for stagger effect */
 .reveal.active.delay-1 {
-  transition-delay: 0s !important;
+  transition-delay: 0.1s;
 }
 
 .reveal.active.delay-2 {
-  transition-delay: 0s !important;
+  transition-delay: 0.2s;
 }
 
 .reveal.active.delay-3 {
-  transition-delay: 0s !important;
+  transition-delay: 0.3s;
+}
+
+/* Accesibilidad: sin animaciones para quien las tiene desactivadas */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal.active {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 
 /* --- Reset --- */
@@ -126,16 +184,17 @@
   padding: 0;
 }
 
-/* Motion off global: quita animaciones/transiciones salvo navbar */
-body * {
-  transition: none !important;
-  animation: none !important;
-}
-
-body *::before,
-body *::after {
-  transition: none !important;
-  animation: none !important;
+/* BUG-51: el "motion off" global (body * { animation: none !important })
+   mataba TODAS las animaciones, incluidos los spinners de carga del panel
+   (imposible distinguir "cargando" de "colgado"). Se sustituye por el
+   estándar de accesibilidad: solo se desactivan si el usuario lo pide. */
+@media (prefers-reduced-motion: reduce) {
+  body *,
+  body *::before,
+  body *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 /* Mantener transiciones solo en el navbar */
@@ -155,7 +214,7 @@ html {
 }
 
 body {
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-body);
   background-color: var(--bg-light);
   color: var(--text-dark);
   line-height: 1.7;
@@ -168,7 +227,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
   color: var(--primary);
   line-height: 1.2;
   font-weight: 800;
@@ -194,7 +253,7 @@ img {
   padding: 0.9rem 2.2rem;
   border: none;
   border-radius: var(--radius-sm);
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-body);
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
@@ -212,13 +271,13 @@ img {
 .btn-primary {
   background-color: var(--accent-action);
   color: var(--white);
-  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.25);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
 
 .btn-primary:hover:not(:disabled) {
   background-color: var(--accent-action-hover);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(225, 29, 72, 0.35);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
 }
 
 .btn-outline {
@@ -306,7 +365,7 @@ img {
   padding: 0.75rem 1rem;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-body);
   font-size: 1rem;
   color: var(--text-dark);
   background: var(--input-bg);
@@ -340,19 +399,19 @@ img {
 
 .badge-pending {
   background: rgba(245, 176, 65, 0.18);
-  color: #b07d00;
+  color: var(--status-pending-text);
   border: 1px solid rgba(245, 176, 65, 0.5);
 }
 
 .badge-confirmed {
   background: rgba(39, 174, 96, 0.15);
-  color: #1a7a42;
+  color: var(--status-confirmed-text);
   border: 1px solid rgba(39, 174, 96, 0.4);
 }
 
 .badge-reconfirmed {
   background: rgba(41, 128, 185, 0.15);
-  color: #1a5276;
+  color: var(--status-reconfirmed-text);
   border: 1px solid rgba(41, 128, 185, 0.4);
 }
 
@@ -364,19 +423,19 @@ img {
 
 .badge-completed {
   background: rgba(127, 140, 141, 0.18);
-  color: #555;
+  color: var(--status-completed-text);
   border: 1px solid rgba(127, 140, 141, 0.4);
 }
 
 .badge-cancelled {
   background: rgba(239, 68, 68, 0.12);
-  color: #c81e1e;
+  color: var(--status-cancelled-text);
   border: 1px solid rgba(239, 68, 68, 0.35);
 }
 
 .badge-no-show {
   background: rgba(44, 62, 80, 0.12);
-  color: #2c3e50;
+  color: var(--status-no-show-text);
   border: 1px solid rgba(44, 62, 80, 0.3);
 }
 
@@ -455,7 +514,7 @@ body:has(.reservation-page) {
 }
 
 .logo-text {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
   font-size: 1.6rem;
   font-weight: 900;
   color: var(--white);
@@ -466,7 +525,7 @@ body:has(.reservation-page) {
 }
 
 .logo-subtext {
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-body);
   font-size: 0.7rem;
   color: var(--accent-action);
   /* Match the brand color */
@@ -554,7 +613,8 @@ body:has(.reservation-page) {
   align-items: center;
   justify-content: center;
   text-align: center;
-  background-image: url('/img/Home.png');
+  /* M3: la imagen real la inyecta Hero.tsx desde la configuración */
+  background-image: linear-gradient(160deg, var(--primary) 0%, var(--primary-light) 100%);
   background-size: cover;
   background-position: center;
   color: var(--white);
@@ -642,7 +702,7 @@ body:has(.reservation-page) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
   font-size: 1.5rem;
   color: var(--text-muted);
   border-radius: var(--radius);
@@ -870,7 +930,7 @@ body:has(.reservation-page) {
 
   .mobile-nav-links a {
     font-size: 1.5rem;
-    font-family: 'Playfair Display', serif;
+    font-family: var(--font-heading);
     font-weight: 700;
     color: var(--white);
     transition: color 0.3s ease;
@@ -1101,7 +1161,7 @@ body:has(.reservation-page) {
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
   font-size: 8rem;
   color: var(--accent-action);
   opacity: 0.1;
@@ -1123,7 +1183,7 @@ body:has(.reservation-page) {
   line-height: 1.8;
   position: relative;
   z-index: 1;
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
 }
 
 .customer-name {
@@ -1210,11 +1270,11 @@ body:has(.reservation-page) {
 }
 
 .star.filled {
-  color: #fbbc04;
+  color: var(--accent-star);
 }
 
 .testimonial-card.google-style .quote {
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-body);
   font-style: normal;
   font-size: 1rem;
   margin: 0;

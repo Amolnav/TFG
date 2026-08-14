@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './LanguageSwitcher';
-import { useConfig } from '../context/ConfigContext';
+import BrandLogo from './BrandLogo';
+import { useConfig } from '../context/useConfig';
 
 interface NavbarProps {
   showLinks?: boolean;
@@ -35,8 +36,11 @@ const Navbar: React.FC<NavbarProps> = ({ showLinks = true, isReservation = false
       <div className="navbar-container">
         <div className="navbar-left">
           <Link to="/" className="logo-container" onClick={closeMobileMenu}>
-            <span className="logo-text">⚓ {config.restaurant_name}</span>
-            <span className="logo-subtext">Alicante, Mediterráneo</span>
+            {/* M1: logo y subtítulo desde configuración, no hardcodeados */}
+            <span className="logo-text"><BrandLogo /> {config.restaurant_name}</span>
+            {config.restaurant_tagline && (
+              <span className="logo-subtext">{config.restaurant_tagline}</span>
+            )}
           </Link>
           <div className="desktop-only">
             <LanguageSwitcher />
@@ -70,7 +74,7 @@ const Navbar: React.FC<NavbarProps> = ({ showLinks = true, isReservation = false
               <button 
                 className={`mobile-menu-toggle ${mobileMenuOpen ? 'active' : ''}`}
                 onClick={toggleMobileMenu}
-                aria-label="Toggle menu"
+                aria-label={t('navbar.toggleMenu')}
               >
                 <span></span>
                 <span></span>

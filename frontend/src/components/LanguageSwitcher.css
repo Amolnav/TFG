@@ -14,7 +14,7 @@
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
-  color: #fff;
+  color: var(--white);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -69,11 +69,11 @@
 
 .language-option:hover {
   background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+  color: var(--white);
 }
 
 .language-option.active {
   background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  color: var(--white);
   font-weight: 600;
 }

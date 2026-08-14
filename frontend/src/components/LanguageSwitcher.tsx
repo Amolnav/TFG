@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBaseLanguage } from '../utils/i18n';
+import { useConfig } from '../context/useConfig';
 import './LanguageSwitcher.css';
 
 const LanguageSwitcher: React.FC = () => {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { config } = useConfig();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const languages = [
-    { code: 'es', label: 'ES' },
-    { code: 'en', label: 'EN' },
-    { code: 'fr', label: 'FR' },
-  ];
+  // M5: los idiomas activos son configuración del despliegue
+  const languages = config.languages_supported
+    .split(',')
+    .map((code) => code.trim())
+    .filter(Boolean)
+    .map((code) => ({ code, label: code.toUpperCase() }));
 
   const activeLanguage = getBaseLanguage(i18n.language);
   const currentLanguage = languages.find(lang => lang.code === activeLanguage) || languages[0];
@@ -32,12 +35,15 @@ const LanguageSwitcher: React.FC = () => {
     setIsOpen(false);
   };
 
+  // M5: con un único idioma activo el selector no aporta nada
+  if (languages.length <= 1) return null;
+
   return (
     <div className="language-switcher-container" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="language-switcher-button"
-        aria-label="Language Selector"
+        aria-label={t('languageSwitcher.label')}
       >
         <span>{currentLanguage.label}</span>
         <svg

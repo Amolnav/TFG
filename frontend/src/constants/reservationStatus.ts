@@ -1,14 +1,11 @@
+import type { TFunction } from 'i18next';
 import type { BookingStatus } from '../types';
 
-export const STATUS_LABELS: Record<BookingStatus, string> = {
-  PENDING: 'Pendiente',
-  CONFIRMED: 'Confirmada',
-  RECONFIRMED: 'Reconfirmada',
-  SEATED: 'En mesa',
-  COMPLETED: 'Completada',
-  CANCELLED: 'Cancelada',
-  NO_SHOW: 'No presentado',
-};
+// BUG-53: las etiquetas de estado se resuelven vía i18n (claves admin.status.*)
+// para que el panel admin siga el idioma seleccionado.
+export function getStatusLabel(status: BookingStatus, t: TFunction): string {
+  return t(`admin.status.${status}`);
+}
 
 export const STATUS_COLORS: Record<BookingStatus, string> = {
   PENDING: 'var(--status-pending)',

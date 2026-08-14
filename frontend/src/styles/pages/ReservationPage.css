@@ -36,9 +36,9 @@
 .reservation-image-panel {
   position: relative;
   min-height: 550px;
-  background:
-    linear-gradient(160deg, rgba(26,54,93,0.72) 0%, rgba(26,54,93,0.3) 100%),
-    url('/restaurant.jpg') center/cover no-repeat;
+  /* BUG-55: /restaurant.jpg no existía (404 en cada carga); la imagen real
+     la aplica ReservationPage.tsx como estilo inline */
+  background: linear-gradient(160deg, rgba(26,54,93,0.72) 0%, rgba(26,54,93,0.3) 100%);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -47,7 +47,7 @@
 }
 
 .image-panel__quote {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
   font-style: italic;
   font-size: 1.3rem;
   line-height: 1.5;
@@ -115,7 +115,7 @@
   background: var(--white);
   transition: all var(--transition);
   flex-shrink: 0;
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-body);
 }
 
 .step-dot.active {
@@ -188,7 +188,7 @@
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--white);
-  font-family: 'Lato', sans-serif;
+  font-family: var(--font-body);
   font-size: 0.88rem;
   font-weight: 700;
   color: var(--text-dark);
@@ -232,7 +232,7 @@
 .error-msg {
   background: rgba(220, 38, 38, 0.05);
   border: 1px solid rgba(220, 38, 38, 0.2);
-  color: #b91c1c;
+  color: var(--danger-strong);
   padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
@@ -252,7 +252,7 @@
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #27ae60, #1e8449);
+  background: linear-gradient(135deg, var(--success), var(--success-dark));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -419,4 +419,157 @@
     height: 28px;
     font-size: 0.75rem;
   }
+}
+
+/* ── N3.1: calendario de disponibilidad ─────────────────────────────── */
+.availability-calendar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  padding: 0.75rem;
+  background: var(--white);
+}
+
+.availability-calendar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.availability-calendar__month {
+  font-weight: 700;
+  color: var(--text-dark);
+  text-transform: capitalize;
+  font-size: 0.95rem;
+}
+
+.availability-calendar__nav {
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-dark);
+  transition: var(--transition);
+}
+
+.availability-calendar__nav:hover:not(:disabled) {
+  background: var(--accent-soft, var(--bg-light));
+}
+
+.availability-calendar__nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.availability-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+}
+
+.availability-calendar__weekday {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.25rem 0;
+}
+
+.availability-calendar__day {
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--white);
+  color: var(--text-dark);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.availability-calendar__day:hover:not(:disabled) {
+  border-color: var(--accent-action);
+  color: var(--accent-action);
+}
+
+.availability-calendar__day:disabled {
+  background: var(--bg-light);
+  color: var(--text-muted);
+  opacity: 0.45;
+  cursor: default;
+  text-decoration: line-through;
+}
+
+.availability-calendar__day.selected {
+  background: var(--accent-action);
+  border-color: var(--accent-action);
+  color: var(--white);
+  font-weight: 700;
+}
+
+.availability-calendar__status {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.availability-calendar__status.error {
+  color: var(--accent-danger);
+}
+
+/* ── N1.1: página de autogestión /reserva/:token ────────────────────── */
+.manage-card {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.manage-cancel-btn {
+  background: var(--accent-danger) !important;
+}
+
+.manage-success-note {
+  background: var(--badge-vip-bg, #f0fdf4);
+  border: 1px solid var(--badge-vip-border, #bbf7d0);
+  color: var(--badge-vip-text, #166534);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ── N1.4: lista de espera ──────────────────────────────────────────── */
+.availability-calendar__day--full {
+  background: var(--bg-light);
+  color: var(--text-muted);
+  border-style: dashed;
+  cursor: pointer;
+}
+
+.availability-calendar__day--full:hover {
+  border-color: var(--accent-decor, var(--accent-action));
+  color: var(--accent-decor, var(--accent-action));
+}
+
+.waitlist-box {
+  border: 1px dashed var(--accent-decor, var(--border));
+  border-radius: var(--radius-md, 8px);
+  padding: 1rem;
+  background: var(--bg-light);
+}
+
+.waitlist-box__title {
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+  color: var(--text-dark);
+}
+
+.waitlist-box__text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
 }

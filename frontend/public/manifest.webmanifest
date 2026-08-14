@@ -1,0 +1,18 @@
+{
+  "name": "Panel del restaurante",
+  "short_name": "Panel",
+  "description": "Panel de gestión de reservas",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
