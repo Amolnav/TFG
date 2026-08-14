@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import Specialties from '../../components/Specialties';
 import { getPublicFrontendConfig } from '../../services/api';
 import { ConfigProvider } from '../../context/ConfigContext';
+import { DEFAULT_PUBLIC_CONFIG } from '../../constants/publicConfig';
 
 vi.mock('../../services/useReveal', () => ({
   useReveal: () => ({ current: null })
@@ -11,7 +12,13 @@ vi.mock('../../services/useReveal', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    i18n: { language: 'es' }
+    t: (key: string) => {
+      const keys: Record<string, string> = {
+        'specialties.viewFullMenu': 'Ver Carta Completa',
+      };
+      return keys[key] || key;
+    },
+    i18n: { language: 'es', changeLanguage: () => new Promise(() => {}), options: {} }
   })
 }));
 
@@ -19,22 +26,22 @@ vi.mock('../../services/api', () => ({
   getPublicFrontendConfig: vi.fn(),
 }));
 
+// M2: fixtures NEUTROS y N platos (aquí 2, no un "3" fijo)
+const TEST_CONFIG = {
+  ...DEFAULT_PUBLIC_CONFIG,
+  restaurant_name: 'Bar Demo',
+  specialties: {
+    title: { es: 'Los imprescindibles', en: 'The essentials', fr: 'Les incontournables' },
+    items: [
+      { id: 1, name: { es: 'Plato Uno' }, description: { es: 'desc 1' }, image: '/branding/dish1.svg' },
+      { id: 2, name: { es: 'Plato Dos' }, description: { es: 'desc 2' }, image: '/branding/dish2.svg' },
+    ],
+  },
+};
+
 describe('Specialties Component', () => {
-  it('renders the section title and specialties cards', async () => {
-    vi.mocked(getPublicFrontendConfig).mockResolvedValue({
-      restaurant_name: 'Mesón Marinero',
-      restaurant_address: 'Calle del Puerto, 12 - Alicante',
-      restaurant_phone: '965 00 00 00',
-      restaurant_email: 'info@mesonmarinero.es',
-      specialties: {
-        title: { es: 'Nuestras Especialidades', en: 'Our Specialties', fr: 'Nos Specialites' },
-        items: [
-          { id: 1, name: { es: 'Paella Marinera', en: 'Seafood Paella', fr: 'Paella aux fruits de mer' }, description: { es: 'desc 1', en: 'desc 1', fr: 'desc 1' }, image: '/img/Paella.png' },
-          { id: 2, name: { es: 'Pulpo a la Gallega', en: 'Galician style Octopus', fr: 'Poulpe a la galicienne' }, description: { es: 'desc 2', en: 'desc 2', fr: 'desc 2' }, image: '/img/Pulpo.png' },
-          { id: 3, name: { es: 'Lubina al Horno', en: 'Baked Sea Bass', fr: 'Bar au four' }, description: { es: 'desc 3', en: 'desc 3', fr: 'desc 3' }, image: '/img/Lubina.png' },
-        ]
-      }
-    });
+  it('renders the section title and N specialty cards', async () => {
+    vi.mocked(getPublicFrontendConfig).mockResolvedValue(TEST_CONFIG);
 
     render(
       <ConfigProvider>
@@ -43,26 +50,16 @@ describe('Specialties Component', () => {
         </BrowserRouter>
       </ConfigProvider>
     );
-    
+
     await waitFor(() => {
-      expect(screen.getByText('Nuestras Especialidades')).toBeInTheDocument();
-      expect(screen.getByText('Paella Marinera')).toBeInTheDocument();
-      expect(screen.getByText('Pulpo a la Gallega')).toBeInTheDocument();
-      expect(screen.getByText('Lubina al Horno')).toBeInTheDocument();
+      expect(screen.getByText('Los imprescindibles')).toBeInTheDocument();
+      expect(screen.getByText('Plato Uno')).toBeInTheDocument();
+      expect(screen.getByText('Plato Dos')).toBeInTheDocument();
     });
   });
 
   it('contains a link to the menu page', async () => {
-    vi.mocked(getPublicFrontendConfig).mockResolvedValue({
-      restaurant_name: 'Mesón Marinero',
-      restaurant_address: 'Calle del Puerto, 12 - Alicante',
-      restaurant_phone: '965 00 00 00',
-      restaurant_email: 'info@mesonmarinero.es',
-      specialties: {
-        title: { es: 'Nuestras Especialidades', en: 'Our Specialties', fr: 'Nos Specialites' },
-        items: [],
-      },
-    });
+    vi.mocked(getPublicFrontendConfig).mockResolvedValue(TEST_CONFIG);
     render(
       <ConfigProvider>
         <BrowserRouter>
@@ -70,9 +67,28 @@ describe('Specialties Component', () => {
         </BrowserRouter>
       </ConfigProvider>
     );
-    
+
     const link = await screen.findByRole('link', { name: /ver carta completa/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/carta');
+  });
+
+  it('sin especialidades configuradas la sección no se muestra', async () => {
+    vi.mocked(getPublicFrontendConfig).mockResolvedValue({
+      ...DEFAULT_PUBLIC_CONFIG,
+      specialties: { title: { es: 'Especialidades' }, items: [] },
+    });
+
+    const { container } = render(
+      <ConfigProvider>
+        <BrowserRouter>
+          <Specialties />
+        </BrowserRouter>
+      </ConfigProvider>
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('.specialties')).toBeNull();
+    });
   });
 });

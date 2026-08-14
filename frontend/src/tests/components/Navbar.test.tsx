@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Navbar from '../../components/Navbar';
 import { ConfigProvider } from '../../context/ConfigContext';
+import { DEFAULT_PUBLIC_CONFIG } from '../../constants/publicConfig';
 import { getPublicFrontendConfig } from '../../services/api';
 
 vi.mock('../../services/api', () => ({
@@ -18,32 +19,34 @@ vi.mock('react-i18next', () => ({
         'navbar.history': 'Nuestra Historia',
         'navbar.bookTable': 'Reservar una Mesa',
         'navbar.reservations': 'Reservas',
+        'navbar.toggleMenu': 'Abrir o cerrar el menú',
       };
       return keys[key] || key;
     },
     i18n: {
       changeLanguage: () => new Promise(() => {}),
       language: 'es',
+      options: {},
     },
   }),
 }));
 
+// M2: fixture NEUTRO — los tests no asertan la marca de ningún cliente real
+const TEST_CONFIG = {
+  ...DEFAULT_PUBLIC_CONFIG,
+  restaurant_name: 'Bar Demo',
+  restaurant_tagline: 'Cocina de mercado',
+  restaurant_phone: '900 111 222',
+  brand_logo: '🥘',
+};
+
 describe('Navbar Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getPublicFrontendConfig).mockResolvedValue({
-      restaurant_name: 'Mesón Marinero',
-      restaurant_address: 'Calle del Puerto, 12 - Alicante',
-      restaurant_phone: '965 00 00 00',
-      restaurant_email: 'info@mesonmarinero.es',
-      specialties: {
-        title: { es: 'Nuestras Especialidades', en: 'Our Specialties', fr: 'Nos Specialites' },
-        items: [],
-      },
-    });
+    vi.mocked(getPublicFrontendConfig).mockResolvedValue(TEST_CONFIG);
   });
 
-  it('renders correctly with default props', () => {
+  it('renderiza la marca configurada (logo + nombre + eslogan)', async () => {
     render(
       <ConfigProvider>
         <BrowserRouter>
@@ -51,12 +54,27 @@ describe('Navbar Component', () => {
         </BrowserRouter>
       </ConfigProvider>
     );
-    
-    expect(screen.getByText('⚓ Mesón Marinero')).toBeInTheDocument();
-    
+
+    expect(await screen.findByText(/Bar Demo/)).toBeInTheDocument();
+    expect(screen.getByText('🥘')).toBeInTheDocument();
+    expect(screen.getByText('Cocina de mercado')).toBeInTheDocument();
+
     // Debería haber 2 links a "Carta" (Desktop y Mobile)
     const cartaLinks = screen.getAllByRole('link', { name: /carta/i });
     expect(cartaLinks.length).toBe(2);
+  });
+
+  it('sin configurar muestra el default neutro "Mi Restaurante"', async () => {
+    vi.mocked(getPublicFrontendConfig).mockRejectedValue(new Error('network'));
+    render(
+      <ConfigProvider>
+        <BrowserRouter>
+          <Navbar />
+        </BrowserRouter>
+      </ConfigProvider>
+    );
+
+    expect(await screen.findByText(/Mi Restaurante/)).toBeInTheDocument();
   });
 
   it('hides nav links when showLinks is false', () => {
@@ -67,11 +85,11 @@ describe('Navbar Component', () => {
         </BrowserRouter>
       </ConfigProvider>
     );
-    
+
     expect(screen.queryByText('Inicio')).not.toBeInTheDocument();
   });
 
-  it('shows phone info when isReservation is true', () => {
+  it('shows phone info when isReservation is true', async () => {
     render(
       <ConfigProvider>
         <BrowserRouter>
@@ -79,8 +97,8 @@ describe('Navbar Component', () => {
         </BrowserRouter>
       </ConfigProvider>
     );
-    
-    expect(screen.getByText(/965 00 00 00/i)).toBeInTheDocument();
+
+    expect(await screen.findByText(/900 111 222/)).toBeInTheDocument();
     expect(screen.queryByText('Reservar una Mesa')).not.toBeInTheDocument();
   });
 });
