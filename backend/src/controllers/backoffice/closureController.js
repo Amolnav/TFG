@@ -1,6 +1,19 @@
 
 const prisma = require('../../config/database');
 const { asyncHandler, BusinessError } = require('../../middleware/errorHandler');
+const { BOOKING_STATUS } = require('../../config/constants');
+const { formatTime } = require('../../utils/dateHelpers');
+const socketManager = require('../../socketManager');
+const emailService = require('../../services/emailService');
+const { recordEvent, actorFromRequest, EVENT_TYPES } = require('../../services/bookingEventService');
+const { logger } = require('../../config/logger');
+
+// N1.3: estados que siguen "vivos" y deben avisarse ante un cierre sobrevenido
+const ACTIVE_STATUSES = [
+  BOOKING_STATUS.PENDING,
+  BOOKING_STATUS.CONFIRMED,
+  BOOKING_STATUS.RECONFIRMED
+];
 
 /**
  * GET /api/backoffice/closures
@@ -50,7 +63,7 @@ exports.getAllClosuresHistory = asyncHandler(async (req, res) => {
  * Body: { startDate, endDate?, reason, isFullDay?, shiftId? }
  */
 exports.createClosure = asyncHandler(async (req, res) => {
-  const { startDate, endDate, reason, isFullDay = true, shiftId } = req.body;
+  const { startDate, endDate, reason, isFullDay = true, shiftId, notifyAffected = false } = req.body;
 
   if (!startDate || !reason) {
     throw new BusinessError(
@@ -83,12 +96,65 @@ exports.createClosure = asyncHandler(async (req, res) => {
     include: { shift: true }
   });
 
-  console.log(`🚫 Cierre creado: ${closure.reason} (${startDate})`);
+  logger.info(`🚫 Cierre creado: ${closure.reason} (${startDate})`);
+
+  // N1.3: cierre sobrevenido — si el staff lo pide explícitamente, las
+  // reservas vivas afectadas se cancelan y el cliente recibe un email con
+  // disculpa y enlace para re-reservar.
+  let cancelledBookings = 0;
+  if (notifyAffected) {
+    const dayStartStr = String(startDate).slice(0, 10);
+    const dayEndStr = String(endDate || startDate).slice(0, 10);
+    const rangeStart = new Date(`${dayStartStr}T00:00:00.000`);
+    const rangeEnd = new Date(`${dayEndStr}T23:59:59.999`);
+
+    let affected = await prisma.booking.findMany({
+      where: {
+        date: { gte: rangeStart, lte: rangeEnd },
+        status: { in: ACTIVE_STATUSES }
+      },
+      include: {
+        customer: true,
+        table: { include: { zone: true } }
+      }
+    });
+
+    // Cierre por turno: solo afectan las reservas dentro de la franja del turno
+    if (closure.shiftId && closure.shift && !closure.isFullDay) {
+      affected = affected.filter((booking) => {
+        const time = formatTime(booking.date);
+        return time >= closure.shift.startTime && time < closure.shift.endTime;
+      });
+    }
+
+    for (const booking of affected) {
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: { status: BOOKING_STATUS.CANCELLED, modifiedAt: new Date() }
+      });
+      // N2.5: auditoría
+      recordEvent(booking.id, EVENT_TYPES.CANCELLED, actorFromRequest(req), {
+        via: 'cierre',
+        reason: closure.reason
+      });
+      socketManager.emitToBackoffice('reservation_cancelled', {
+        id: booking.id,
+        date: booking.date,
+        pax: booking.pax
+      });
+      emailService.sendClosureNotice(booking, booking.customer, { reason: closure.reason });
+    }
+
+    cancelledBookings = affected.length;
+    if (cancelledBookings > 0) {
+      logger.info(`🚫 Cierre sobrevenido: ${cancelledBookings} reservas canceladas y avisadas por email`);
+    }
+  }
 
   res.status(201).json({
     status: 'success',
     message: 'Cierre registrado correctamente',
-    data: closure
+    data: { ...closure, cancelledBookings }
   });
 });
 

@@ -1,14 +1,17 @@
 
 require('dotenv').config();
 const http = require('http');
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
+const pinoHttp = require('pino-http');
 const prisma = require('./config/database');
+const { initMonitoring } = require('./config/monitoring');
 const { initSocketServer } = require('./socketManager');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { authMiddleware } = require('./middleware/authMiddleware');
+const { publicLimiter, loginLimiter } = require('./middleware/rateLimiter');
 
 // --- IMPORTACIÓN DE RUTAS ---
 // Auth
@@ -29,6 +32,10 @@ const backofficeClosureRoutes = require('./routes/backoffice/closures');
 const backofficeDashboardRoutes = require('./routes/backoffice/dashboard');
 const backofficeConfigRoutes = require('./routes/backoffice/config');
 const backofficeMenuRoutes = require('./routes/backoffice/menu');
+const backofficeStaffRoutes = require('./routes/backoffice/staff');
+const backofficeWaitlistRoutes = require('./routes/backoffice/waitlist');
+const backofficeReportsRoutes = require('./routes/backoffice/reports');
+const { logger } = require('./config/logger');
 
 // --- CONFIGURACIÓN INICIAL ---
 const app = express();
@@ -36,27 +43,41 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// N4.3: Sentry opcional (no-op sin SENTRY_DSN)
+initMonitoring();
+
 // --- MIDDLEWARES GLOBALES ---
 app.use(helmet()); // Seguridad HTTP
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
 }));
-app.use(morgan(NODE_ENV === 'development' ? 'dev' : 'combined')); // Logs
+
+// N4.3: request-id por petición (se respeta el X-Request-Id entrante del
+// proxy; si no llega, se genera). Visible en logs y en la respuesta.
+app.use((req, res, next) => {
+  req.id = req.get('x-request-id') || crypto.randomUUID();
+  res.setHeader('X-Request-Id', req.id);
+  next();
+});
+
+// N4.3: logging estructurado de peticiones (sustituye a morgan y al logger
+// manual de desarrollo; la redacción de sensibles la aplica pino)
+app.use(pinoHttp({
+  logger: logger.pino,
+  genReqId: (req) => req.id,
+  autoLogging: {
+    ignore: (req) => req.url === '/health' || req.url === '/'
+  },
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  }
+}));
+
 app.use(express.json({ limit: '10mb' })); // Parser JSON
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parser URL-encoded
-
-// --- LOGGING DE REQUESTS (Desarrollo) ---
-if (NODE_ENV === 'development') {
-  app.use((req, res, next) => {
-    console.log(`📨 ${req.method} ${req.path}`, {
-      body: req.body,
-      query: req.query,
-      params: req.params
-    });
-    next();
-  });
-}
 
 // --- DEFINICIÓN DE RUTAS ---
 
@@ -90,6 +111,41 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// N3.5: sitemap.xml generado desde la configuración (idiomas activos) y la
+// URL pública del despliegue. El nginx del frontend lo proxya a esta ruta.
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const configService = require('./services/configService');
+    const base = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const languages = String(await configService.getConfigValue('languages_supported') || 'es')
+      .split(',').map((lang) => lang.trim()).filter(Boolean);
+    const routes = ['/', '/reservar', '/carta', '/historia'];
+    const today = new Date().toISOString().slice(0, 10);
+
+    const urls = routes.map((route) => {
+      const alternates = languages.length > 1
+        ? languages.map((lang) =>
+            `    <xhtml:link rel="alternate" hreflang="${lang}" href="${base}${route}?lng=${lang}"/>`
+          ).join('\n')
+        : '';
+      return `  <url>\n    <loc>${base}${route}</loc>\n    <lastmod>${today}</lastmod>\n${alternates}${alternates ? '\n' : ''}  </url>`;
+    }).join('\n');
+
+    res.type('application/xml').send(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls}\n</urlset>\n`
+    );
+  } catch (error) {
+    logger.error('❌ Error generando sitemap:', error);
+    res.status(500).type('text/plain').send('sitemap error');
+  }
+});
+
+// N4.1: rate limiting. trust proxy=1 para que req.ip sea el cliente real
+// detrás del proxy único del despliegue (nginx del compose o Render).
+app.set('trust proxy', 1);
+app.use('/api/auth/login', loginLimiter);
+app.use('/api/public', publicLimiter);
+
 // 3. Auth
 app.use('/api/auth', authRoutes);
 
@@ -109,6 +165,9 @@ app.use('/api/backoffice/closures', backofficeClosureRoutes);
 app.use('/api/backoffice/dashboard', backofficeDashboardRoutes);
 app.use('/api/backoffice/config', backofficeConfigRoutes);
 app.use('/api/backoffice/menu', backofficeMenuRoutes);
+app.use('/api/backoffice/staff', backofficeStaffRoutes);
+app.use('/api/backoffice/waitlist', backofficeWaitlistRoutes);
+app.use('/api/backoffice/reports', backofficeReportsRoutes);
 
 // 5. Ruta de Debug - Ver zonas y mesas (Solo desarrollo)
 if (NODE_ENV === 'development') {
@@ -125,7 +184,7 @@ if (NODE_ENV === 'development') {
         data: zones
       });
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       res.status(500).json({ error: 'Error obteniendo zonas' });
     }
   });
@@ -144,7 +203,7 @@ if (NODE_ENV === 'development') {
         data: customers
       });
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       res.status(500).json({ error: 'Error obteniendo clientes' });
     }
   });
@@ -160,58 +219,74 @@ app.use(errorHandler);
 // --- ARRANQUE DEL SERVIDOR ---
 async function startServer() {
   try {
+    // Comprobar la zona horaria del proceso (BUG-04)
+    const { checkTimezone } = require('./config/timezone');
+    const tzCheck = checkTimezone();
+    tzCheck.warnings.forEach((warning) => logger.warn(`⚠️  ${warning}`));
+    logger.info(`🕐 Zona horaria activa: ${tzCheck.timezone}`);
+
     // Conectar a la base de datos
     await prisma.$connect();
-    console.log('✅ Base de Datos PostgreSQL: CONECTADA');
+    logger.info('✅ Base de Datos PostgreSQL: CONECTADA');
+
+    // M4: cargar las reglas de negocio configurables (SystemConfig) en caché
+    const { loadBookingRules } = require('./config/bookingRules');
+    await loadBookingRules();
     
     // Verificar que hay datos iniciales
     const zoneCount = await prisma.zone.count();
     const tableCount = await prisma.table.count();
     
     if (zoneCount === 0 || tableCount === 0) {
-      console.log('⚠️  ADVERTENCIA: No hay zonas o mesas en la base de datos.');
-      console.log('   Ejecuta: npm run db:seed');
+      logger.info('⚠️  ADVERTENCIA: No hay zonas o mesas en la base de datos.');
+      logger.info('   Ejecuta: npm run db:seed');
     } else {
-      console.log(`📊 Datos: ${zoneCount} zonas, ${tableCount} mesas`);
+      logger.info(`📊 Datos: ${zoneCount} zonas, ${tableCount} mesas`);
     }
+
+    // N1.2: scheduler de jobs (recordatorios/reconfirmación y derivados)
+    const { startScheduler } = require('./jobs/scheduler');
+    startScheduler();
 
     // Iniciar servidor Socket.io + HTTP
     initSocketServer(server);
     server.listen(PORT, () => {
-      console.log('');
-      console.log('═══════════════════════════════════════════');
-      console.log('🚀 MOTOR DE RESERVAS API v2.0');
-      console.log('═══════════════════════════════════════════');
-      console.log(`📍 Servidor: http://localhost:${PORT}`);
-      console.log(`🌍 Entorno: ${NODE_ENV}`);
-      console.log(`⏰ Iniciado: ${new Date().toLocaleString()}`);
-      console.log('');
-      console.log('📡 Endpoints disponibles:');
-      console.log('   🌐 Frontend Público:');
-      console.log('      POST /api/public/reservations/availability/check');
-      console.log('      GET  /api/public/reservations/availability/calendar');
-      console.log('      POST /api/public/reservations/availability/times');
-      console.log('      POST /api/public/reservations');
-      console.log('');
-      console.log('   🏢 Back-office:');
-      console.log('      GET  /api/backoffice/bookings');
-      console.log('      GET  /api/backoffice/dashboard');
-      console.log('      GET  /api/backoffice/customers');
-      console.log('      ... y más');
-      console.log('');
-      console.log('═══════════════════════════════════════════');
-      console.log('');
+      logger.info('');
+      logger.info('═══════════════════════════════════════════');
+      logger.info('🚀 MOTOR DE RESERVAS API v2.0');
+      logger.info('═══════════════════════════════════════════');
+      logger.info(`📍 Servidor: http://localhost:${PORT}`);
+      logger.info(`🌍 Entorno: ${NODE_ENV}`);
+      logger.info(`⏰ Iniciado: ${new Date().toLocaleString()}`);
+      logger.info('');
+      logger.info('📡 Endpoints disponibles:');
+      logger.info('   🌐 Frontend Público:');
+      logger.info('      POST /api/public/reservations/availability/check');
+      logger.info('      GET  /api/public/reservations/availability/calendar');
+      logger.info('      POST /api/public/reservations/availability/times');
+      logger.info('      POST /api/public/reservations');
+      logger.info('');
+      logger.info('   🏢 Back-office:');
+      logger.info('      GET  /api/backoffice/bookings');
+      logger.info('      GET  /api/backoffice/dashboard');
+      logger.info('      GET  /api/backoffice/customers');
+      logger.info('      ... y más');
+      logger.info('');
+      logger.info('═══════════════════════════════════════════');
+      logger.info('');
     });
   } catch (error) {
-    console.error('❌ Error fatal al iniciar el servidor:', error);
+    logger.error('❌ Error fatal al iniciar el servidor:', error);
     process.exit(1);
   }
 }
 
 async function shutdown(signal) {
-  console.log(`\n⚠️  Cerrando servidor (${signal})...`);
+  logger.info(`\n⚠️  Cerrando servidor (${signal})...`);
+  const { stopScheduler } = require('./jobs/scheduler');
+  stopScheduler();
   await prisma.$disconnect();
-  console.log('✅ Conexión a BD cerrada');
+  logger.info('✅ Conexión a BD cerrada');
   process.exit(0);
 }
 

@@ -1,5 +1,5 @@
 
-const { AVAILABILITY } = require('../config/constants');
+const { getBookingRules } = require('../config/bookingRules');
 
 /**
  * Formatea una fecha a YYYY-MM-DD (en hora local del sistema)
@@ -73,20 +73,50 @@ function getDayOfWeek(date) {
 }
 
 /**
+ * Parsea "YYYY-MM-DD" como fecha LOCAL (medianoche local), devolviendo null
+ * si el formato o los componentes no son válidos.
+ * BUG-07: `new Date("YYYY-MM-DD")` parsea en UTC, lo que mezclado con la
+ * aritmética local rechazaba siempre el día +MAX_DAYS_AHEAD.
+ */
+function parseLocalDate(dateStr) {
+  if (dateStr instanceof Date) {
+    if (isNaN(dateStr.getTime())) return null;
+    return new Date(dateStr.getFullYear(), dateStr.getMonth(), dateStr.getDate());
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ''));
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  // Rechazar componentes que "ruedan" (p. ej. 2026-02-31 → 3 de marzo)
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+
+  return date;
+}
+
+/**
  * Comprueba si una fecha está dentro del rango permitido
  */
 function isDateInBookableRange(date) {
+  const targetDate = parseLocalDate(date);
+  if (!targetDate) return false;
+
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const targetDate = new Date(date);
-  
+
   // No puede ser en el pasado (permitimos hoy)
   if (targetDate < today) return false;
-  
-  // No puede ser más allá del máximo permitido
-  const maxDate = addDays(today, AVAILABILITY.MAX_DAYS_AHEAD);
+
+  // No puede ser más allá del máximo permitido (el día límite es reservable)
+  const maxDate = addDays(today, getBookingRules().maxDaysAhead);
   if (targetDate > maxDate) return false;
-  
+
   return true;
 }
 
@@ -96,7 +126,7 @@ function isDateInBookableRange(date) {
 function meetsMinimumAdvanceTime(dateStr, timeStr) {
   const bookingDateTime = combineDateAndTime(dateStr, timeStr);
   const now = new Date();
-  const minDateTime = addMinutes(now, AVAILABILITY.MIN_HOURS_AHEAD * 60);
+  const minDateTime = addMinutes(now, getBookingRules().minHoursAhead * 60);
   
   return bookingDateTime >= minDateTime;
 }
@@ -147,6 +177,7 @@ function getDaysInMonth(year, month) {
 module.exports = {
   formatDate,
   formatTime,
+  parseLocalDate,
   combineDateAndTime,
   addMinutes,
   addDays,

@@ -1,6 +1,7 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./config/auth');
+const { logger } = require('./config/logger');
 let io;
 
 function initSocketServer(server) {
@@ -29,7 +30,7 @@ function initSocketServer(server) {
       socket.data.user = decoded;
       return next();
     } catch (err) {
-      console.warn('🔒 Socket auth failed:', err.message || err);
+      logger.warn('🔒 Socket auth failed:', err.message || err);
       const error = new Error('Socket authentication failed');
       error.data = { code: 'INVALID_TOKEN' };
       return next(error);
@@ -38,16 +39,16 @@ function initSocketServer(server) {
 
   io.on('connection', (socket) => {
     const user = socket.data.user || {};
-    console.log(`🔌 Admin socket connected: ${socket.id} (${user.email || 'unknown'})`);
+    logger.info(`🔌 Admin socket connected: ${socket.id} (${user.email || 'unknown'})`);
     socket.join('backoffice');
 
     socket.on('disconnect', (reason) => {
-      console.log(`🔌 Admin socket disconnected: ${socket.id} (${reason})`);
+      logger.info(`🔌 Admin socket disconnected: ${socket.id} (${reason})`);
     });
   });
 
   io.on('error', (error) => {
-    console.error('Socket.io error:', error);
+    logger.error('Socket.io error:', error);
   });
 
   return io;
@@ -62,7 +63,7 @@ function getIO() {
 
 function emitToBackoffice(event, payload) {
   if (!io) {
-    console.warn('Socket.io not initialized. Skipping emit for event:', event);
+    logger.warn('Socket.io not initialized. Skipping emit for event:', event);
     return;
   }
 

@@ -1,17 +1,49 @@
 
+const { logger, SENSITIVE_FIELDS } = require('../config/logger');
+const { captureException } = require('../config/monitoring');
 /**
  * Middleware de manejo de errores global
  * Captura todos los errores no controlados y devuelve respuestas JSON consistentes
  */
 
-const errorHandler = (err, req, res, next) => {
-  console.error('❌ Error capturado:', {
+// BUG-06: el log de errores no debe volcar credenciales (los fallos de
+// /api/auth/login dejaban la contraseña en claro en los logs).
+// N4.3: la lista de campos sensibles es la misma que redacta el logger.
+function sanitizeBody(body) {
+  if (!body || typeof body !== 'object') return body;
+  const sanitized = { ...body };
+  for (const field of SENSITIVE_FIELDS) {
+    if (field in sanitized) sanitized[field] = '[REDACTED]';
+  }
+  return sanitized;
+}
+
+// Nota: Express identifica los middleware de error por su aridad (4 args)
+const errorHandler = (err, req, res, _next) => {
+  logger.error('❌ Error capturado:', {
     message: err.message,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     path: req.path,
     method: req.method,
-    body: req.body
+    requestId: req.id,
+    body: sanitizeBody(req.body)
   });
+
+  // N4.3: los errores NO de negocio van a Sentry si está activo (no-op sin DSN)
+  if (!['ValidationError', 'BusinessError'].includes(err.name)) {
+    captureException(err);
+  }
+
+  // Violación del constraint de exclusión booking_no_table_overlap (23P01):
+  // es la última defensa contra el doble-booking bajo concurrencia y debe
+  // responder 409 amable, no un 500 DATABASE_ERROR (BUG-15/T2)
+  if (err.message && err.message.includes('23P01')) {
+    return res.status(409).json({
+      status: 'error',
+      type: 'TABLE_OCCUPIED',
+      message: 'La mesa acaba de ser reservada por otra persona para ese horario. Prueba con otra hora.'
+    });
+  }
 
   // Errores de validación de Prisma
   if (err.code && err.code.startsWith('P')) {

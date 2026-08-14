@@ -15,11 +15,13 @@ RUN npm install
 # Copiamos el código
 COPY . .
 
-# Generamos el cliente (con variable dummy para que no falle)
-ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
-RUN npx prisma generate
+# Generamos el cliente. BUG-30: la URL dummy se limita a este RUN; antes
+# quedaba como ENV de la imagen final y enmascaraba errores de configuración
+# (sin DATABASE_URL real, Prisma intentaba conectar a "dummy" en vez de
+# fallar por variable ausente).
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
 
 EXPOSE 4000
 
-# Comando de arranque
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run dev"]
+# BUG-30: producción arranca con node (npm start), no con nodemon
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

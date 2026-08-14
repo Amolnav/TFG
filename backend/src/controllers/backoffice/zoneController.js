@@ -1,6 +1,22 @@
 
 const prisma = require('../../config/database');
-const { asyncHandler } = require('../../middleware/errorHandler');
+const { asyncHandler, BusinessError, ValidationError } = require('../../middleware/errorHandler');
+const { BOOKING_STATUS } = require('../../config/constants');
+
+// BUG-13: el borrado físico de mesas/zonas deja las reservas futuras con
+// tableId = NULL (SetNull), invisibles para el plano y la disponibilidad.
+// Antes de borrar hay que comprobar que no haya reservas futuras activas.
+const INACTIVE_STATUSES = [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.NO_SHOW];
+
+async function countFutureActiveBookings(where) {
+  return prisma.booking.count({
+    where: {
+      ...where,
+      date: { gte: new Date() },
+      status: { notIn: INACTIVE_STATUSES }
+    }
+  });
+}
 
 /**
  * GET /api/backoffice/zones
@@ -35,6 +51,13 @@ exports.getAllZones = asyncHandler(async (req, res) => {
  */
 exports.createZone = asyncHandler(async (req, res) => {
   const { name, description, isActive, displayOrder } = req.body;
+
+  // BUG-31: sin esta validación, un nombre ausente acababa en error de
+  // Prisma → 500 DATABASE_ERROR en vez de un 400 claro
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    throw new ValidationError('El nombre de la zona es obligatorio');
+  }
+
   const newZone = await prisma.zone.create({
     data: {
       name,
@@ -68,12 +91,23 @@ exports.updateZone = asyncHandler(async (req, res) => {
 exports.createTable = asyncHandler(async (req, res) => {
   const { zoneId } = req.params;
   const { name, minCapacity, maxCapacity, isActive } = req.body;
-  
+
+  // BUG-31: validar nombre y coherencia de capacidades (una mesa con
+  // min > max jamás sería asignable por el motor de reservas)
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    throw new ValidationError('El nombre de la mesa es obligatorio');
+  }
+  const min = parseInt(minCapacity, 10) || 1;
+  const max = parseInt(maxCapacity, 10) || 4;
+  if (min < 1 || max < 1 || min > max) {
+    throw new ValidationError('Capacidades inválidas: minCapacity debe ser ≥ 1 y ≤ maxCapacity');
+  }
+
   const newTable = await prisma.table.create({
     data: {
       name,
-      minCapacity: parseInt(minCapacity, 10) || 1,
-      maxCapacity: parseInt(maxCapacity, 10) || 4,
+      minCapacity: min,
+      maxCapacity: max,
       isActive: isActive !== undefined ? isActive : true,
       zoneId: parseInt(zoneId, 10)
     }
@@ -109,11 +143,22 @@ exports.updateTable = asyncHandler(async (req, res) => {
  */
 exports.deleteTable = asyncHandler(async (req, res) => {
   const { tableId } = req.params;
-  
+  const id = parseInt(tableId, 10);
+
+  const futureBookings = await countFutureActiveBookings({ tableId: id });
+  if (futureBookings > 0) {
+    throw new BusinessError(
+      `No se puede eliminar la mesa: tiene ${futureBookings} reserva(s) futura(s) activa(s). Cancélalas o reasígnalas primero.`,
+      'TABLE_HAS_ACTIVE_BOOKINGS',
+      409,
+      { futureBookings }
+    );
+  }
+
   await prisma.table.delete({
-    where: { id: parseInt(tableId, 10) }
+    where: { id }
   });
-  
+
   res.json({ status: 'success', data: null, message: 'Mesa eliminada correctamente' });
 });
 
@@ -123,11 +168,22 @@ exports.deleteTable = asyncHandler(async (req, res) => {
  */
 exports.deleteZone = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+  const zoneId = parseInt(id, 10);
+
+  const futureBookings = await countFutureActiveBookings({ table: { zoneId } });
+  if (futureBookings > 0) {
+    throw new BusinessError(
+      `No se puede eliminar la zona: sus mesas tienen ${futureBookings} reserva(s) futura(s) activa(s). Cancélalas o reasígnalas primero.`,
+      'ZONE_HAS_ACTIVE_BOOKINGS',
+      409,
+      { futureBookings }
+    );
+  }
+
   await prisma.zone.delete({
-    where: { id: parseInt(id, 10) }
+    where: { id: zoneId }
   });
-  
+
   res.json({ status: 'success', data: null, message: 'Zona eliminada correctamente' });
 });
 

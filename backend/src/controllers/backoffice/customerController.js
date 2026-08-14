@@ -1,5 +1,4 @@
 
-const prisma = require('../../config/database');
 const customerService = require('../../services/customerService');
 const { asyncHandler, BusinessError } = require('../../middleware/errorHandler');
 
@@ -9,7 +8,7 @@ const { asyncHandler, BusinessError } = require('../../middleware/errorHandler')
  * Query: search?, isVip?, isBlacklisted?, limit?
  */
 exports.getAllCustomers = asyncHandler(async (req, res) => {
-  const { search, isVip, isBlacklisted, limit = 50, page = 1 } = req.query;
+  const { search, isVip, isBlacklisted, limit = 50 } = req.query;
 
   const filters = {
     limit: parseInt(limit)
@@ -118,6 +117,44 @@ exports.toggleVip = asyncHandler(async (req, res) => {
     status: 'success',
     message: isVip ? 'Cliente marcado como VIP' : 'Estado VIP eliminado',
     data: updated
+  });
+});
+
+// ── N4.4: RGPD ─────────────────────────────────────────────────────────
+
+const gdprService = require('../../services/gdprService');
+
+/**
+ * GET /api/backoffice/customers/:id/export
+ * Exportación RGPD: perfil + reservas + notas + lista de espera (JSON).
+ */
+exports.exportCustomerData = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const data = await gdprService.exportCustomerData(id);
+  if (!data) {
+    throw new BusinessError('Cliente no encontrado', 'NOT_FOUND', 404);
+  }
+
+  res.setHeader('Content-Disposition', `attachment; filename="cliente-${id.slice(0, 8)}.json"`);
+  res.json({ status: 'success', data });
+});
+
+/**
+ * POST /api/backoffice/customers/:id/anonymize (solo ADMIN)
+ * Sustituye la PII por placeholders conservando las filas (estadística
+ * intacta, integridad intacta). Irreversible.
+ */
+exports.anonymizeCustomer = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const updated = await gdprService.anonymizeCustomer(id, req.user?.name || req.user?.email || 'staff');
+  if (!updated) {
+    throw new BusinessError('Cliente no encontrado', 'NOT_FOUND', 404);
+  }
+
+  res.json({
+    status: 'success',
+    message: 'Cliente anonimizado correctamente.',
+    data: { customer: updated }
   });
 });
 

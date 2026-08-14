@@ -1,5 +1,5 @@
 const prisma = require('../../config/database');
-const { asyncHandler } = require('../../middleware/errorHandler');
+const { asyncHandler, ValidationError } = require('../../middleware/errorHandler');
 
 /**
  * GET /api/backoffice/menu/categories
@@ -26,6 +26,12 @@ exports.getAllCategories = asyncHandler(async (req, res) => {
  */
 exports.createCategory = asyncHandler(async (req, res) => {
   const { name, description, isActive, displayOrder } = req.body;
+
+  // BUG-31: 400 claro en vez de error de Prisma → 500
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    throw new ValidationError('El nombre de la categoría es obligatorio');
+  }
+
   const newCategory = await prisma.menuCategory.create({
     data: {
       name,
@@ -62,11 +68,49 @@ exports.deleteCategory = asyncHandler(async (req, res) => {
   res.json({ status: 'success', data: null, message: 'Categoría eliminada' });
 });
 
+// N3.3: valida los alérgenos contra los 14 UE y la foto como URL/ruta
+const { EU_ALLERGENS } = require('../../config/constants');
+
+function validateItemAllergens(allergens) {
+  if (allergens === undefined) return undefined;
+  if (!Array.isArray(allergens)) {
+    throw new ValidationError('allergens debe ser un array');
+  }
+  const invalid = allergens.filter((a) => !EU_ALLERGENS.includes(a));
+  if (invalid.length > 0) {
+    throw new ValidationError(
+      `Alérgenos no válidos: ${invalid.join(', ')}. Permitidos: ${EU_ALLERGENS.join(', ')}`
+    );
+  }
+  return [...new Set(allergens)];
+}
+
+function validateItemPhotoUrl(photoUrl) {
+  if (photoUrl === undefined) return undefined;
+  if (photoUrl === null || photoUrl === '') return null;
+  if (typeof photoUrl !== 'string' || !/^(https?:\/\/|\/)/.test(photoUrl)) {
+    throw new ValidationError('photoUrl debe ser una URL http(s) o una ruta local (/branding/...)');
+  }
+  return photoUrl;
+}
+
 /**
  * POST /api/backoffice/menu/items
  */
 exports.createItem = asyncHandler(async (req, res) => {
-  const { name, description, price, isActive, displayOrder, categoryId } = req.body;
+  const { name, description, price, isActive, displayOrder, categoryId, allergens, photoUrl } = req.body;
+
+  // BUG-31: validar antes de llegar a Prisma
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    throw new ValidationError('El nombre del plato es obligatorio');
+  }
+  const parsedCategoryId = parseInt(categoryId, 10);
+  if (!Number.isInteger(parsedCategoryId)) {
+    throw new ValidationError('categoryId debe ser un número entero válido');
+  }
+  const validAllergens = validateItemAllergens(allergens);
+  const validPhotoUrl = validateItemPhotoUrl(photoUrl);
+
   const newItem = await prisma.menuItem.create({
     data: {
       name,
@@ -74,7 +118,9 @@ exports.createItem = asyncHandler(async (req, res) => {
       price,
       isActive: isActive !== undefined ? isActive : true,
       displayOrder: displayOrder || 0,
-      categoryId: parseInt(categoryId, 10)
+      categoryId: parsedCategoryId,
+      ...(validAllergens !== undefined ? { allergens: validAllergens } : {}),
+      ...(validPhotoUrl !== undefined ? { photoUrl: validPhotoUrl } : {})
     }
   });
   res.status(201).json({ status: 'success', data: newItem });
@@ -85,8 +131,8 @@ exports.createItem = asyncHandler(async (req, res) => {
  */
 exports.updateItem = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, description, price, isActive, displayOrder, categoryId } = req.body;
-  
+  const { name, description, price, isActive, displayOrder, categoryId, allergens, photoUrl } = req.body;
+
   const data = {};
   if (name !== undefined) data.name = name;
   if (description !== undefined) data.description = description;
@@ -94,7 +140,12 @@ exports.updateItem = asyncHandler(async (req, res) => {
   if (isActive !== undefined) data.isActive = isActive;
   if (displayOrder !== undefined) data.displayOrder = displayOrder;
   if (categoryId !== undefined) data.categoryId = parseInt(categoryId, 10);
-  
+  // N3.3
+  const validAllergens = validateItemAllergens(allergens);
+  if (validAllergens !== undefined) data.allergens = validAllergens;
+  const validPhotoUrl = validateItemPhotoUrl(photoUrl);
+  if (validPhotoUrl !== undefined) data.photoUrl = validPhotoUrl;
+
   const updatedItem = await prisma.menuItem.update({
     where: { id: parseInt(id, 10) },
     data

@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const { asyncHandler, BusinessError } = require('../middleware/errorHandler');
+const { logger } = require('../config/logger');
 
 /**
  * POST /api/auth/login
@@ -65,7 +66,7 @@ exports.login = asyncHandler(async (req, res) => {
     { expiresIn: JWT_EXPIRES_IN }
   );
 
-  console.log(`🔐 Login: ${staff.email} (${staff.role})`);
+  logger.info(`🔐 Login: ${staff.email} (${staff.role})`);
 
   res.json({
     status: 'success',

@@ -26,7 +26,9 @@ model Customer {
   phone           String
   firstName       String
   lastName        String
-  language        Language       @default(ES)
+  // M5: código de idioma en minúsculas ("es", "en", "fr", ...). String en vez
+  // de enum para poder activar idiomas nuevos solo con configuración.
+  language        String         @default("es")
   allergens       String[]
   preferences     String?
   birthday        DateTime?
@@ -110,11 +112,32 @@ model Booking {
   source            BookingSource @default(WEB)
   customer          Customer      @relation(fields: [customerId], references: [id])
   table             Table?        @relation(fields: [tableId], references: [id])
+  events            BookingEvent[]
 
   @@index([date, status])
   @@index([customerId])
   @@index([tableId])
   @@index([confirmationToken])
+}
+
+// N2.5/N3.4: historial de eventos de una reserva (auditoría "quién hizo qué"
+// y guarda de envíos como la petición de reseña). Aditivo: nunca se borran
+// filas de Booking por tener eventos (cascade solo si se borra la reserva).
+model BookingEvent {
+  id        String   @id @default(uuid())
+  bookingId String
+  // Tipo de evento: CREATED, STATUS_CHANGED, RESCHEDULED, TABLE_REASSIGNED,
+  // CANCELLED, REVIEW_REQUEST_SENT... (String para no migrar por cada tipo)
+  type      String
+  // Quién lo hizo: nombre/email del staff, "cliente" (autogestión) o "sistema"
+  actor     String?
+  // Snapshot del cambio (antes/después, motivo...)
+  payload   Json?
+  createdAt DateTime @default(now())
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+  @@index([type, createdAt])
 }
 
 model Shift {
@@ -188,6 +211,9 @@ model MenuItem {
   name         String
   description  String?
   price        String
+  // N3.3: alérgenos UE del plato (Reglamento 1169/2011) y foto opcional (URL)
+  allergens    String[]     @default([])
+  photoUrl     String?
   isActive     Boolean      @default(true)
   displayOrder Int          @default(0)
   categoryId   Int
@@ -202,12 +228,6 @@ model MenuItem {
 enum StaffRole {
   ADMIN
   STAFF
-}
-
-enum Language {
-  ES
-  EN
-  FR
 }
 
 enum BookingStatus {

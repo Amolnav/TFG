@@ -11,9 +11,15 @@ router.get('/', bookingController.getAllBookings);
 // Obtiene detalles completos de una reserva
 router.get('/:id', bookingController.getBookingById);
 
+// N2.5: timeline de auditoría de la reserva
+router.get('/:id/events', bookingController.getBookingEvents);
+
 // POST /api/backoffice/bookings
 // Crea nueva reserva (walk-ins, teléfono)
 router.post('/', bookingController.createBooking);
+
+// N2.2: walk-in — ocupar una mesa ahora mismo con datos mínimos
+router.post('/walkin', bookingController.createWalkIn);
 
 // PATCH /api/backoffice/bookings/:id
 // Modifica una reserva existente

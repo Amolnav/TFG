@@ -1,91 +1,74 @@
 
 const prisma = require('../config/database');
 const { BusinessError, ValidationError } = require('../middleware/errorHandler');
-const { BLACKLIST } = require('../config/constants');
+const { getBookingRules } = require('../config/bookingRules');
 
 /**
- * Busca o crea un cliente
- * Lógica principal para reservas: busca por email, si no existe lo crea
+ * Busca o crea un cliente.
+ * BUG-09: la identidad se resuelve SOLO por email (actual o histórico).
+ * Emparejar por teléfono permitía "secuestrar" la ficha de otro cliente
+ * sobrescribiendo su email y nombre. El teléfono se actualiza únicamente
+ * sobre un cliente ya identificado por su email.
+ * totalVisits NO se toca aquí: se registra con registerVisit() cuando la
+ * reserva se crea con éxito (antes se inflaba con intentos fallidos).
  */
 async function findOrCreateCustomer(email, customerData) {
-  const { firstName, lastName, phone, allergens } = customerData;
-  const normalizedEmail = email.toLowerCase().trim();
-  
+  const { firstName, lastName, phone, allergens, language } = customerData;
+
+  // M5: idioma normalizado a código base en minúsculas ("es-ES" → "es")
+  const normalizedLanguage = typeof language === 'string' && /^[a-zA-Z]{2}/.test(language)
+    ? language.toLowerCase().split('-')[0]
+    : null;
+
   // Validar email
   if (!email || !isValidEmail(email)) {
     throw new ValidationError('Email inválido');
   }
-  
-  // Buscar cliente existente por cualquiera de sus campos actuales o previos
-  let customer;
-  try {
-    customer = await prisma.customer.findFirst({
-      where: {
-        OR: [
-          { email: normalizedEmail },
-          { previousEmails: { has: normalizedEmail } },
-          { phone: phone },
-          { previousPhones: { has: phone } }
-        ]
-      },
-      include: {
-        bookings: {
-          orderBy: { date: 'desc' },
-          take: 5
-        }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  let customer = await prisma.customer.findFirst({
+    where: {
+      OR: [
+        { email: normalizedEmail },
+        { previousEmails: { has: normalizedEmail } }
+      ]
+    },
+    include: {
+      bookings: {
+        orderBy: { date: 'desc' },
+        take: 5
       }
-    });
-  } catch (error) {
-    console.error('[Prisma Error Details]:', {
-      message: error.message,
-      code: error.code,
-      meta: error.meta,
-      clientVersion: prisma._clientVersion
-    });
-    // Si el error es por los campos nuevos, intentamos búsqueda tradicional como fallback
-    if (error.message.includes('previousEmails') || error.message.includes('previousPhones')) {
-      console.warn('[Prisma Fallback]: Intentando búsqueda simplificada por error en campos extendidos');
-      customer = await prisma.customer.findFirst({
-        where: {
-          OR: [
-            { email: normalizedEmail },
-            { phone: phone }
-          ]
-        },
-        include: {
-          bookings: {
-            orderBy: { date: 'desc' },
-            take: 5
-          }
-        }
-      });
-    } else {
-      throw error;
     }
-  }
-  
+  });
+
   if (customer) {
-    // Cliente existente: Actualizar datos y guardar en historial
-    const updateData = {
-      totalVisits: { increment: 1 }
-    };
-    
+    // Cliente existente: actualizar datos y guardar en historial
+    const updateData = {};
+
     // Gestionar historial de nombres
     const currentFullName = `${firstName} ${lastName}`.trim();
     if (currentFullName && !customer.previousNames.includes(currentFullName)) {
       updateData.previousNames = [...customer.previousNames, currentFullName];
     }
-    
-    // Gestionar historial de emails
+
+    // Gestionar historial de emails. Si el email casó por previousEmails,
+    // solo se restaura como principal si no pertenece ya a otro cliente
+    // (email es unique en BD).
     if (normalizedEmail !== customer.email) {
-      if (!customer.previousEmails.includes(customer.email)) {
-        updateData.previousEmails = [...customer.previousEmails, customer.email];
+      const emailOwner = await prisma.customer.findUnique({
+        where: { email: normalizedEmail }
+      });
+      if (!emailOwner || emailOwner.id === customer.id) {
+        if (!customer.previousEmails.includes(customer.email)) {
+          updateData.previousEmails = [...customer.previousEmails, customer.email];
+        }
+        updateData.email = normalizedEmail;
       }
-      updateData.email = normalizedEmail;
     } else if (!customer.previousEmails.includes(normalizedEmail)) {
       updateData.previousEmails = [...customer.previousEmails, normalizedEmail];
     }
-    
+
     // Gestionar historial de teléfonos
     if (phone && phone !== customer.phone) {
       if (!customer.previousPhones.includes(customer.phone)) {
@@ -95,18 +78,21 @@ async function findOrCreateCustomer(email, customerData) {
     } else if (phone && !customer.previousPhones.includes(phone)) {
       updateData.previousPhones = [...customer.previousPhones, phone];
     }
-    
+
     // Actualizar campos principales con la información más reciente
     if (firstName) updateData.firstName = firstName;
     if (lastName) updateData.lastName = lastName;
-    
+
+    // M5: el idioma con el que reservó pasa a ser su idioma de comunicación
+    if (normalizedLanguage) updateData.language = normalizedLanguage;
+
     // Actualizar alergias
     if (allergens && allergens.length > 0) {
       const existingAllergens = customer.allergens || [];
       const combinedAllergens = [...new Set([...existingAllergens, ...allergens])];
       updateData.allergens = combinedAllergens;
     }
-    
+
     customer = await prisma.customer.update({
       where: { id: customer.id },
       data: updateData,
@@ -117,34 +103,48 @@ async function findOrCreateCustomer(email, customerData) {
         }
       }
     });
-    
+
     return {
       customer,
       isNew: false,
       message: `¡Hola de nuevo, ${customer.firstName}!`
     };
   }
-  
-  // Cliente nuevo: Crear con historial inicial
+
+  // Cliente nuevo: crear con historial inicial (la visita se registra al confirmar)
   customer = await prisma.customer.create({
     data: {
       email: normalizedEmail,
       firstName: firstName || 'Cliente',
       lastName: lastName || '',
       phone: phone || '',
+      ...(normalizedLanguage ? { language: normalizedLanguage } : {}),
       allergens: allergens || [],
-      totalVisits: 1,
+      totalVisits: 0,
       previousEmails: [normalizedEmail],
       previousPhones: phone ? [phone] : [],
       previousNames: [`${firstName} ${lastName}`.trim()]
     }
   });
-  
+
   return {
     customer,
     isNew: true,
     message: `¡Bienvenido, ${customer.firstName}!`
   };
+}
+
+/**
+ * Registra una visita (incremento de totalVisits) para un cliente.
+ * Se llama solo cuando la reserva se ha creado con éxito (BUG-09).
+ * @param {string} customerId
+ * @param {Object} db - Cliente Prisma o transacción (por defecto prisma)
+ */
+async function registerVisit(customerId, db = prisma) {
+  return db.customer.update({
+    where: { id: customerId },
+    data: { totalVisits: { increment: 1 } }
+  });
 }
 
 /**
@@ -226,7 +226,7 @@ function calculateCustomerStats(customer) {
     upcoming,
     loyaltyRate,
     avgDaysBetweenVisits,
-    riskLevel: noShows >= BLACKLIST.NO_SHOW_THRESHOLD ? 'HIGH' : noShows > 0 ? 'MEDIUM' : 'LOW'
+    riskLevel: noShows >= getBookingRules().noShowThreshold ? 'HIGH' : noShows > 0 ? 'MEDIUM' : 'LOW'
   };
 }
 
@@ -288,8 +288,8 @@ async function manageCustomerTags(customerId, tags, action = 'SET') {
     throw new BusinessError('Cliente no encontrado', 'NOT_FOUND', 404);
   }
   
-  let newTags = [];
-  
+  let newTags;
+
   switch (action) {
     case 'SET':
       newTags = tags;
@@ -451,6 +451,7 @@ function isValidEmail(email) {
 
 module.exports = {
   findOrCreateCustomer,
+  registerVisit,
   getCustomerProfile,
   updateCustomerProfile,
   addCustomerNote,

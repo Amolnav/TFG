@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const zoneController = require('../../controllers/backoffice/zoneController');
+const { requireRole } = require('../../middleware/authMiddleware');
 
 // GET /api/backoffice/zones
 router.get('/', zoneController.getAllZones);
@@ -19,9 +20,10 @@ router.post('/:zoneId/tables', zoneController.createTable);
 router.put('/tables/:tableId', zoneController.updateTable);
 
 // DELETE /api/backoffice/zones/tables/:tableId
-router.delete('/tables/:tableId', zoneController.deleteTable);
+// BUG-03: los borrados son solo ADMIN
+router.delete('/tables/:tableId', requireRole('ADMIN'), zoneController.deleteTable);
 
 // DELETE /api/backoffice/zones/:id
-router.delete('/:id', zoneController.deleteZone);
+router.delete('/:id', requireRole('ADMIN'), zoneController.deleteZone);
 
 module.exports = router;

@@ -1,4 +1,4 @@
-const { PAX, AVAILABILITY } = require('../config/constants');
+const { getBookingRules } = require('../config/bookingRules');
 const { ValidationError } = require('../middleware/errorHandler');
 const { isDateInBookableRange, meetsMinimumAdvanceTime } = require('../utils/dateHelpers');
 const prisma = require('../config/database');
@@ -17,21 +17,23 @@ async function validatePaxCount(pax) {
     };
   }
   
-  if (numPax < PAX.MIN) {
+  const { paxMin } = getBookingRules();
+  if (numPax < paxMin) {
     return {
       valid: false,
-      message: PAX.CONTACT_MESSAGE,
+      message: `Las reservas deben ser de al menos ${paxMin} comensales. Para otros casos, contacte directamente con el restaurante.`,
       code: 'PAX_BELOW_MIN'
     };
   }
 
-  // Obtener el máximo real de la base de datos (mayor mesa)
+  // Obtener el máximo real de la base de datos (mayor mesa) — getMaxPax()
+  // es la única fuente del máximo; 12 es solo el fallback sin mesas
   const maxTable = await prisma.table.findFirst({
     where: { isActive: true },
     orderBy: { maxCapacity: 'desc' }
   });
-  
-  const currentMax = maxTable ? maxTable.maxCapacity : PAX.MAX;
+
+  const currentMax = maxTable ? maxTable.maxCapacity : 12;
   
   if (numPax > currentMax) {
     return {
@@ -70,7 +72,7 @@ function validatePhone(phone) {
   }
   
   // Eliminar espacios y caracteres especiales
-  const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+  const cleanPhone = phone.replace(/[\s\-()]/g, '');
   
   // Debe tener entre 9 y 15 dígitos
   if (!/^\+?[\d]{9,15}$/.test(cleanPhone)) {
@@ -101,7 +103,7 @@ function validateBookingDate(dateStr) {
   
   if (!isDateInBookableRange(dateStr)) {
     throw new ValidationError(
-      `Solo se permiten reservas hasta ${AVAILABILITY.MAX_DAYS_AHEAD} días en el futuro`
+      `Solo se permiten reservas hasta ${getBookingRules().maxDaysAhead} días en el futuro`
     );
   }
   
@@ -109,30 +111,33 @@ function validateBookingDate(dateStr) {
 }
 
 /**
- * Valida hora de reserva
+ * Valida hora de reserva.
+ * @param {Object} options
+ * @param {boolean} options.skipAdvanceCheck - BUG-14: el back-office puede
+ *   editar reservas inminentes sin la antelación mínima de cliente.
  */
-function validateBookingTime(dateStr, timeStr) {
+function validateBookingTime(dateStr, timeStr, options = {}) {
   if (!timeStr) {
     throw new ValidationError('La hora es requerida');
   }
-  
+
   // Validar formato HH:mm
   if (!/^\d{2}:\d{2}$/.test(timeStr)) {
     throw new ValidationError('El formato de hora debe ser HH:mm');
   }
-  
+
   const [hours, minutes] = timeStr.split(':').map(Number);
-  
+
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
     throw new ValidationError('La hora no es válida');
   }
-  
-  if (!meetsMinimumAdvanceTime(dateStr, timeStr)) {
+
+  if (!options.skipAdvanceCheck && !meetsMinimumAdvanceTime(dateStr, timeStr)) {
     throw new ValidationError(
-      `Debe reservar con al menos ${AVAILABILITY.MIN_HOURS_AHEAD} horas de antelación`
+      `Debe reservar con al menos ${getBookingRules().minHoursAhead} horas de antelación`
     );
   }
-  
+
   return true;
 }
 

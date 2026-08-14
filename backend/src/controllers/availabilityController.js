@@ -2,6 +2,7 @@ const availabilityService = require('../services/availabilityService');
 const validationService = require('../services/validationService');
 const configService = require('../services/configService');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { logger } = require('../config/logger');
 
 /**
  * GET /api/public/availability/config
@@ -9,11 +10,15 @@ const { asyncHandler } = require('../middleware/errorHandler');
  */
 exports.getPublicConfig = asyncHandler(async (req, res) => {
   const maxPax = await configService.getMaxPax();
-  
+  // N3.1: el calendario del wizard necesita la ventana de reserva para
+  // limitar la navegación por meses
+  const maxDaysAhead = parseInt(await configService.getConfigValue('booking_max_days_ahead'), 10) || 30;
+
   res.json({
     status: 'success',
     data: {
-      maxPax
+      maxPax,
+      maxDaysAhead
     }
   });
 });
@@ -148,7 +153,7 @@ exports.checkAvailability = asyncHandler(async (req, res) => {
     });
   }
   
-  console.log(`🔍 Comprobando disponibilidad: ${date} ${time} (${pax} pax)`);
+  logger.info(`🔍 Comprobando disponibilidad: ${date} ${time} (${pax} pax)`);
   
   // Comprobar disponibilidad
   const result = await availabilityService.checkAvailability(

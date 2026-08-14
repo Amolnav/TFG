@@ -1,16 +1,19 @@
 
-const { DURATION } = require('../config/constants');
+const { getBookingRules } = require('../config/bookingRules');
 
 /**
  * Calcula la duración estimada de una reserva según el número de comensales.
+ * M4: los tramos (booking_durations) son configurables por restaurante; el
+ * tramo con maxPax null actúa de comodín para grupos grandes.
  * @param {number} pax
  * @returns {number} Duración en minutos
  */
 function calculateDuration(pax) {
-  if (pax <= 2) return DURATION.SMALL;    // 90 min
-  if (pax <= 4) return DURATION.MEDIUM;   // 120 min
-  if (pax <= 6) return DURATION.LARGE;    // 150 min
-  return DURATION.GROUP;                   // 180 min
+  const { durations } = getBookingRules();
+  for (const tier of durations) {
+    if (tier.maxPax === null || pax <= tier.maxPax) return tier.minutes;
+  }
+  return durations[durations.length - 1].minutes;
 }
 
 /**

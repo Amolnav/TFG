@@ -57,9 +57,13 @@ async function assignOptimalTable(pax, dateStr, timeStr, zoneId = null, options 
   // Ordenar por puntuación (mejor mesa primero)
   const rankedTables = sortTablesByScore(candidateTables, pax);
 
-  // Intentar asignar la mejor mesa libre
+  // Intentar asignar la mejor mesa libre (N1.1: excludeBookingId permite
+  // reasignar la propia reserva a un horario que solapa con el original)
   for (const table of rankedTables) {
-    const isFree = await isTableFree(table.id, startDateTime, endDateTime, { db });
+    const isFree = await isTableFree(table.id, startDateTime, endDateTime, {
+      db,
+      excludeBookingId: options.excludeBookingId
+    });
     if (isFree) {
       return {
         type: 'SINGLE',
