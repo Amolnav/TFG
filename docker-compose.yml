@@ -1,14 +1,23 @@
+# Stack de DESARROLLO parametrizado (plan de modularidad M6).
+# Todas las señas de identidad del despliegue salen de variables de entorno
+# (fichero .env junto a este compose — ver .env.example):
+#   PROJECT_NAME  prefijo de contenedores        (default: restaurant)
+#   DB_NAME       nombre de la base de datos     (default: restaurant)
+#   DB_PORT / BACKEND_PORT / FRONTEND_PORT / PGADMIN_PORT
+#   TZ            zona horaria del restaurante   (default: Europe/Madrid)
+#   RESTAURANT    dataset del seed               (default: meson-marinero)
+#   SEED_MODE     demo | prod                    (default: demo)
 services:
   # --- BASE DE DATOS (PostgreSQL v16) ---
   db:
     image: postgres:16
-    container_name: resto_db
+    container_name: ${PROJECT_NAME:-restaurant}_db
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: root          
-      POSTGRES_DB: mesonMarinero       
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
+      POSTGRES_DB: ${DB_NAME:-restaurant}
     ports:
-      - "5433:5432"                    
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -21,20 +30,29 @@ services:
 
   # --- BACKEND (API) ---
   backend:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: resto_backend
+    container_name: ${PROJECT_NAME:-restaurant}_backend
+    # En desarrollo se usa nodemon (la imagen por defecto arranca npm start)
+    command: sh -c "npx prisma migrate deploy && npm run dev"
     ports:
-      - "4000:4000"
+      - "${BACKEND_PORT:-4000}:4000"
     volumes:
       - ./backend:/app
       - /app/node_modules
     environment:
-      DATABASE_URL: postgres://postgres:root@db:5432/mesonMarinero
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD:-root}@db:5432/${DB_NAME:-restaurant}
       PORT: 4000
       NODE_ENV: development
-      TZ: Europe/Madrid
+      TZ: ${TZ:-Europe/Madrid}
+      # M6: dataset y modo del seed (docker compose exec backend npm run db:seed)
+      RESTAURANT: ${RESTAURANT:-meson-marinero}
+      SEED_MODE: ${SEED_MODE:-demo}
+      # N4.5: credenciales del admin sembrado (en demo, la contraseña también
+      # aplica al demoAdmin del dataset; sin definir cae a admin1234)
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
@@ -43,17 +61,17 @@ services:
 
   # --- FRONTEND (WEB) - Development Mode ---
   frontend:
-    build: 
+    build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    container_name: resto_frontend
+    container_name: ${PROJECT_NAME:-restaurant}_frontend
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://localhost:4000/api
+      - VITE_API_URL=http://localhost:${BACKEND_PORT:-4000}/api
       - BACKEND_URL=http://backend:4000
     depends_on:
       - backend
@@ -65,13 +83,13 @@ services:
   # --- GESTOR VISUAL DB (pgAdmin) ---
   pgadmin:
     image: dpage/pgadmin4
-    container_name: resto_pgadmin
+    container_name: ${PROJECT_NAME:-restaurant}_pgadmin
     restart: always
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: root
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-root}
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
     depends_on:
       - db
     networks:

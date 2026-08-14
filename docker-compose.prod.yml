@@ -2,13 +2,13 @@ services:
   # --- BASE DE DATOS (PostgreSQL v16) ---
   db:
     image: postgres:16
-    container_name: resto_db_prod
+    container_name: ${PROJECT_NAME:-restaurant}_db_prod
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
-      POSTGRES_DB: mesonMarinero
-    ports:
-      - "5433:5432"
+      # BUG-28: sin default débil — la contraseña es obligatoria en producción
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en el entorno o en un fichero .env}
+      POSTGRES_DB: ${DB_NAME:-restaurant}
+    # BUG-28: la BD no se publica al host; los servicios usan la red interna
     volumes:
       - postgres_data_prod:/var/lib/postgresql/data
     networks:
@@ -25,13 +25,25 @@ services:
     build: 
       context: ./backend
       dockerfile: Dockerfile
-    container_name: resto_backend_prod
+    container_name: ${PROJECT_NAME:-restaurant}_backend_prod
     ports:
-      - "4000:4000"
+      - "${BACKEND_PORT:-4000}:4000"
     environment:
-      DATABASE_URL: postgres://postgres:${DB_PASSWORD:-root}@db:5432/mesonMarinero
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD:?Define DB_PASSWORD}@db:5432/${DB_NAME:-restaurant}
       PORT: 4000
       NODE_ENV: production
+      # BUG-04: el motor de reservas interpreta las horas en la TZ del proceso
+      TZ: ${TZ:-Europe/Madrid}
+      # BUG-02: obligatorio en producción; el backend rechaza arrancar sin él
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en el entorno o en un fichero .env}
+      # BUG-30: origen permitido por CORS (el proxy nginx del frontend hace
+      # mismo-origen, pero los accesos directos a :4000 usan esta URL)
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      # M6: dataset del seed y modo (prod exige SEED_ADMIN_EMAIL/PASSWORD)
+      RESTAURANT: ${RESTAURANT:-meson-marinero}
+      SEED_MODE: ${SEED_MODE:-prod}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
@@ -41,30 +53,70 @@ services:
 
   # --- FRONTEND (WEB) - Production Mode ---
   frontend:
-    build: 
+    build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: resto_frontend_prod
+      # BUG-30: Vite necesita estas variables en tiempo de BUILD. Con el
+      # proxy nginx, los defaults mismo-origen (/api) funcionan sin tocar nada.
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL:-}
+    container_name: ${PROJECT_NAME:-restaurant}_frontend_prod
     ports:
-      - "80:80"
-    environment:
-      - VITE_API_URL=http://localhost:4000/api
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
       - backend
     networks:
       - resto-network
     restart: unless-stopped
 
+  # --- BACKUPS AUTOMÁTICOS (N4.2) ---
+  # pg_dump diario (formato custom) a ./backups con rotación por días.
+  # Restauración: scripts/restore.sh <fichero.dump> (probar la restauración
+  # forma parte del alta de un cliente: un backup sin probar no es un backup).
+  backup:
+    image: postgres:16
+    container_name: ${PROJECT_NAME:-restaurant}_backup_prod
+    environment:
+      PGPASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en el entorno o en un fichero .env}
+      DB_NAME: ${DB_NAME:-restaurant}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - resto-network
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "⏳ Servicio de backup iniciado (diario, retención $${BACKUP_RETENTION_DAYS} días)"
+        while true; do
+          FILE="/backups/backup-$${DB_NAME}-$$(date +%Y%m%d-%H%M%S).dump"
+          if pg_dump -h db -U postgres -d "$${DB_NAME}" -F c -f "$$FILE"; then
+            echo "✅ Backup creado: $$FILE"
+          else
+            echo "❌ Error creando el backup $$FILE" >&2
+          fi
+          find /backups -name 'backup-*.dump' -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
+          sleep 86400
+        done
+
   # --- GESTOR VISUAL DB (pgAdmin) - Optional en producción ---
   pgadmin:
     image: dpage/pgadmin4
-    container_name: resto_pgadmin_prod
+    container_name: ${PROJECT_NAME:-restaurant}_pgadmin_prod
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-root}
+      # BUG-28: sin default root; el servicio además solo escucha en
+      # localhost y requiere el profile "tools" para arrancar
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@localhost}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-cambia-esta-password}
     ports:
-      - "5050:80"
+      # BUG-28: solo accesible desde el propio host (túnel SSH para admin remota)
+      - "127.0.0.1:5050:80"
     depends_on:
       - db
     networks:
